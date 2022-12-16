@@ -213,7 +213,7 @@ static int LinuxSockBind(const char *if_name, uint16_t rxid, uint16_t txid) {
     }
 
     struct ifreq ifr;
-    strcpy(ifr.ifr_name, if_name);
+    strlcpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name));
     ioctl(fd, SIOCGIFINDEX, &ifr);
 
     struct sockaddr_can addr;

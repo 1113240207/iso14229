@@ -317,10 +317,6 @@ typedef struct {
 
 [examples/README.md](examples/README.md)
 
-## 测试
-
-[test_uds.c](test_uds.c)
-
 ### 运行测试 
 
 ```sh

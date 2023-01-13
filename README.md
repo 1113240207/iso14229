@@ -11,7 +11,7 @@
 
 iso14229 is a server and client session-layer implementation of (ISO14229-1:2013) targeting embedded systems. It is tested with [`isotp-c`](https://github.com/lishen2/isotp-c) as well as [linux kernel](https://github.com/linux-can/can-utils/blob/master/include/linux/can/isotp.h) ISO15765-2 (ISO-TP) transport layer implementations. 
 
-API status: **not yet stable**
+API status: **stabilizing**
 
 ## quickstart: server
 
@@ -19,7 +19,15 @@ API status: **not yet stable**
 #include "iso14229.h"
 
 static uint8_t fn(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) {
-    return kServiceNotSupported;
+    switch (ev) {
+    case UDS_SRV_EVT_EcuReset: { // 0x10
+        UDSECUResetArgs_t *r = (UDSECUResetArgs_t *)arg;
+        printf("got ECUReset request of type %x\n", r->type);
+        return kPositiveResponse;
+    default:
+        return kServiceNotSupported;
+    }
+    }
 }
 
 int main() {
@@ -50,9 +58,7 @@ int main() {
 
 Features:
 - all memory allocation is static
-- architecture-independent
-    - tested: arm, x86-64, ppc
-    - tests run under qemu 
+- architecture-independent. tested on arm, x86-64, ppc, ppc64. see [test_qemu.py](./test_qemu.py)
 - has many existing unit-tests and tests are easy to extend
 
 ##  supported functions (server and client )
@@ -336,20 +342,6 @@ typedef struct {
 ```sh
 make test
 ```
-
-## qemu
-
-```sh
-CC=powerpc-linux-gnu-gcc make test_bin
-qemu-ppc -L /usr/powerpc-linux-gnu test_bin
-```
-## wine
-
-```sh
-CC=x86_64-w64-mingw32-gcc make test_bin
-wine test_bin.exe
-```
-
 
 # Contributing
 

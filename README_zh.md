@@ -15,7 +15,15 @@ API状态: **未稳定**
 #include "iso14229.h"
 
 static uint8_t fn(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) {
-    return kServiceNotSupported;
+    switch (ev) {
+    case UDS_SRV_EVT_EcuReset: { // 0x10
+        UDSECUResetArgs_t *r = (UDSECUResetArgs_t *)arg;
+        printf("got ECUReset request of type %x\n", r->type);
+        return kPositiveResponse;
+    default:
+        return kServiceNotSupported;
+    }
+    }
 }
 
 int main() {
@@ -38,9 +46,7 @@ int main() {
 
 特点:
 - 静态内存分配
-- 独立于处理器架构
-    - 测试了: arm, x86-64, ppc
-    - 可以用qemu测试更多
+- 独立于处理器架构 测试了: arm, x86-64, ppc, ppc64。参考[test_qemu.py](./test_qemu.py)
 - 单元测试又多又容易扩展
 
 ##  支持服务(服务器和客户端)

@@ -213,7 +213,7 @@ static int LinuxSockBind(const char *if_name, uint16_t rxid, uint16_t txid) {
     }
 
     struct ifreq ifr;
-    strlcpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name));
     ioctl(fd, SIOCGIFINDEX, &ifr);
 
     struct sockaddr_can addr;
@@ -624,8 +624,10 @@ static void ResetTransfer(UDSServer_t *srv) {
 
 static uint8_t _0x34_RequestDownload(UDSServer_t *self) {
     uint8_t err;
-    size_t memoryAddress = 0;
-    size_t memorySize = 0;
+    long long unsigned int memoryAddress = 0;
+    long long unsigned int memorySize = 0;
+    _Static_assert(sizeof(memorySize) >= sizeof(size_t), "sizeof(memorySize) too small");
+    _Static_assert(sizeof(void *) >= sizeof(memoryAddress), "sizeof(memoryAddress) too small");
 
     if (self->xferIsActive) {
         return NegativeResponse(self, kConditionsNotCorrect);
@@ -639,11 +641,11 @@ static uint8_t _0x34_RequestDownload(UDSServer_t *self) {
     uint8_t memorySizeLength = (self->recv_buf[2] & 0xF0) >> 4;
     uint8_t memoryAddressLength = self->recv_buf[2] & 0x0F;
 
-    if (memorySizeLength == 0 || memorySizeLength > sizeof(memorySize)) {
+    if (memorySizeLength == 0 || memorySizeLength > sizeof(size_t)) {
         return NegativeResponse(self, kRequestOutOfRange);
     }
 
-    if (memoryAddressLength == 0 || memoryAddressLength > sizeof(memoryAddress)) {
+    if (memoryAddressLength == 0 || memoryAddressLength > sizeof(void *)) {
         return NegativeResponse(self, kRequestOutOfRange);
     }
 
@@ -652,13 +654,13 @@ static uint8_t _0x34_RequestDownload(UDSServer_t *self) {
     }
 
     for (int byteIdx = 0; byteIdx < memoryAddressLength; byteIdx++) {
-        uint8_t byte = self->recv_buf[UDS_0X34_REQ_BASE_LEN + byteIdx];
+        unsigned long long byte = self->recv_buf[UDS_0X34_REQ_BASE_LEN + byteIdx];
         uint8_t shiftBytes = memoryAddressLength - 1 - byteIdx;
         memoryAddress |= byte << (8 * shiftBytes);
     }
 
     for (int byteIdx = 0; byteIdx < memorySizeLength; byteIdx++) {
-        uint8_t byte = self->recv_buf[UDS_0X34_REQ_BASE_LEN + memoryAddressLength + byteIdx];
+        unsigned long long byte = self->recv_buf[UDS_0X34_REQ_BASE_LEN + memoryAddressLength + byteIdx];
         uint8_t shiftBytes = memorySizeLength - 1 - byteIdx;
         memorySize |= byte << (8 * shiftBytes);
     }
@@ -1049,6 +1051,7 @@ UDSErr_t UDSServerInit(UDSServer_t *self, const UDSServerConfig_t *cfg) {
     assert(cfg->tp);
     assert(cfg->tp->recv);
     assert(cfg->tp->send);
+    assert(cfg->tp->poll);
     self->tp = cfg->tp;
 #elif UDS_TP == UDS_TP_ISOTP_C
     assert(cfg->phys_send_id != cfg->func_recv_id && cfg->func_recv_id != cfg->phys_recv_id);
@@ -1146,6 +1149,7 @@ UDSErr_t UDSClientInit(UDSClient_t *client, const UDSClientConfig_t *cfg) {
     assert(cfg->tp);
     assert(cfg->tp->recv);
     assert(cfg->tp->send);
+    assert(cfg->tp->poll);
     client->tp = cfg->tp;
 #elif UDS_TP == UDS_TP_ISOTP_C
     assert(cfg->phys_recv_id != cfg->func_send_id && cfg->func_send_id != cfg->phys_send_id);

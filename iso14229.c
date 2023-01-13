@@ -18,6 +18,8 @@
 #define UDS_0X10_RESP_LEN 6U
 #define UDS_0X11_REQ_MIN_LEN 2U
 #define UDS_0X11_RESP_BASE_LEN 2U
+#define UDS_0X23_REQ_MIN_LEN 4U
+#define UDS_0X23_RESP_BASE_LEN 1U
 #define UDS_0X22_RESP_BASE_LEN 1U
 #define UDS_0X27_REQ_BASE_LEN 2U
 #define UDS_0X27_RESP_BASE_LEN 2U
@@ -31,6 +33,7 @@
 #define UDS_0X34_REQ_BASE_LEN 3U
 #define UDS_0X34_RESP_BASE_LEN 2U
 #define UDS_0X35_REQ_BASE_LEN 3U
+#define UDS_0X35_RESP_BASE_LEN 2U
 #define UDS_0X36_REQ_BASE_LEN 2U
 #define UDS_0X36_RESP_BASE_LEN 2U
 #define UDS_0X37_REQ_BASE_LEN 1U
@@ -305,14 +308,10 @@ static uint8_t _0x10_DiagnosticSessionControl(UDSServer_t *self) {
 
     enum UDSDiagnosticSessionType sessType = self->recv_buf[1] & 0x4F;
 
-    if (NULL == self->fn) {
-        return NegativeResponse(self, kServiceNotSupported);
-    }
-
     UDSDiagSessCtrlArgs_t args = {
         .type = sessType,
-        .p2_ms = self->p2_ms,
-        .p2_star_ms = self->p2_star_ms,
+        .p2_ms = UDS_CLIENT_DEFAULT_P2_MS,
+        .p2_star_ms = UDS_CLIENT_DEFAULT_P2_STAR_MS,
     };
 
     uint8_t err = self->fn(self, UDS_SRV_EVT_DiagSessCtrl, &args);
@@ -322,8 +321,6 @@ static uint8_t _0x10_DiagnosticSessionControl(UDSServer_t *self) {
     }
 
     self->sessionType = sessType;
-    self->p2_ms = args.p2_ms;
-    self->p2_star_ms = args.p2_star_ms;
 
     switch (sessType) {
     case kDefaultSession:
@@ -340,12 +337,12 @@ static uint8_t _0x10_DiagnosticSessionControl(UDSServer_t *self) {
 
     // UDS-1-2013: Table 29
     // resolution: 1ms
-    self->send_buf[2] = self->p2_ms >> 8;
-    self->send_buf[3] = self->p2_ms;
+    self->send_buf[2] = args.p2_ms >> 8;
+    self->send_buf[3] = args.p2_ms;
 
     // resolution: 10ms
-    self->send_buf[4] = (self->p2_star_ms / 10) >> 8;
-    self->send_buf[5] = self->p2_star_ms / 10;
+    self->send_buf[4] = (args.p2_star_ms / 10) >> 8;
+    self->send_buf[5] = args.p2_star_ms / 10;
 
     self->send_size = UDS_0X10_RESP_LEN;
     return kPositiveResponse;
@@ -356,10 +353,6 @@ static uint8_t _0x11_ECUReset(UDSServer_t *self) {
 
     if (self->recv_size < UDS_0X11_REQ_MIN_LEN) {
         return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
-    }
-
-    if (NULL == self->fn) {
-        return NegativeResponse(self, kServiceNotSupported);
     }
 
     UDSECUResetArgs_t args = {
@@ -404,10 +397,6 @@ static uint8_t _0x22_ReadDataByIdentifier(UDSServer_t *self) {
     self->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_READ_DATA_BY_IDENTIFIER);
     self->send_size = 1;
 
-    if (NULL == self->fn) {
-        return NegativeResponse(self, kServiceNotSupported);
-    }
-
     if (0 != (self->recv_size - 1) % sizeof(uint16_t)) {
         return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
     }
@@ -444,16 +433,99 @@ static uint8_t _0x22_ReadDataByIdentifier(UDSServer_t *self) {
     return kPositiveResponse;
 }
 
+/**
+ * @brief decode the addressAndLengthFormatIdentifier that appears in ReadMemoryByAddress (0x23),
+ * DynamicallyDefineDataIdentifier (0x2C), RequestDownload (0X34)
+ *
+ * @param self
+ * @param buf pointer to addressAndDataLengthFormatIdentifier in recv_buf
+ * @param memoryAddress the decoded memory address
+ * @param memorySize the decoded memory size
+ * @return uint8_t
+ */
+static uint8_t decodeAddressAndLength(UDSServer_t *self, uint8_t *const buf, void **memoryAddress,
+                                      size_t *memorySize) {
+    assert(self);
+    assert(memoryAddress);
+    assert(memorySize);
+    long long unsigned int tmp = 0;
+    *memoryAddress = 0;
+    *memorySize = 0;
+
+    assert(buf >= self->recv_buf && buf <= self->recv_buf + sizeof(self->recv_buf));
+
+    if (self->recv_size < 3) {
+        return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
+    }
+
+    uint8_t memorySizeLength = (buf[0] & 0xF0) >> 4;
+    uint8_t memoryAddressLength = buf[0] & 0x0F;
+
+    if (memorySizeLength == 0 || memorySizeLength > sizeof(size_t)) {
+        return NegativeResponse(self, kRequestOutOfRange);
+    }
+
+    if (memoryAddressLength == 0 || memoryAddressLength > sizeof(size_t)) {
+        return NegativeResponse(self, kRequestOutOfRange);
+    }
+
+    if (buf + memorySizeLength + memoryAddressLength > self->recv_buf + self->recv_size) {
+        return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
+    }
+
+    for (int byteIdx = 0; byteIdx < memoryAddressLength; byteIdx++) {
+        long long unsigned int byte = buf[1 + byteIdx];
+        uint8_t shiftBytes = memoryAddressLength - 1 - byteIdx;
+        tmp |= byte << (8 * shiftBytes);
+    }
+    *memoryAddress = (void *)tmp;
+
+    for (int byteIdx = 0; byteIdx < memorySizeLength; byteIdx++) {
+        uint8_t byte = buf[1 + memoryAddressLength + byteIdx];
+        uint8_t shiftBytes = memorySizeLength - 1 - byteIdx;
+        *memorySize |= byte << (8 * shiftBytes);
+    }
+    return kPositiveResponse;
+}
+
+static uint8_t _0x23_ReadMemoryByAddress(UDSServer_t *self) {
+    uint8_t ret = kPositiveResponse;
+    void *address = 0;
+    size_t length = 0;
+
+    if (self->recv_size < UDS_0X23_REQ_MIN_LEN) {
+        return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
+    }
+
+    ret = decodeAddressAndLength(self, &self->recv_buf[1], &address, &length);
+    if (kPositiveResponse != ret) {
+        return NegativeResponse(self, ret);
+    }
+
+    UDSReadMemByAddrArgs_t args = {
+        .memAddr = address,
+        .memSize = length,
+        .copy = safe_copy,
+    };
+
+    self->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_READ_MEMORY_BY_ADDRESS);
+    self->send_size = UDS_0X23_RESP_BASE_LEN;
+    ret = self->fn(self, UDS_SRV_EVT_ReadMemByAddr, &args);
+    if (kPositiveResponse != ret) {
+        return NegativeResponse(self, ret);
+    }
+    if (self->send_size != UDS_0X23_RESP_BASE_LEN + length) {
+        return kGeneralProgrammingFailure;
+    }
+    return kPositiveResponse;
+}
+
 static uint8_t _0x27_SecurityAccess(UDSServer_t *self) {
     uint8_t subFunction = self->recv_buf[1];
     uint8_t response = kPositiveResponse;
 
     if (UDSSecurityAccessLevelIsReserved(subFunction)) {
         return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
-    }
-
-    if (NULL == self->fn) {
-        return NegativeResponse(self, kServiceNotSupported);
     }
 
     self->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_SECURITY_ACCESS);
@@ -624,10 +696,8 @@ static void ResetTransfer(UDSServer_t *srv) {
 
 static uint8_t _0x34_RequestDownload(UDSServer_t *self) {
     uint8_t err;
-    long long unsigned int memoryAddress = 0;
-    long long unsigned int memorySize = 0;
-    _Static_assert(sizeof(memorySize) >= sizeof(size_t), "sizeof(memorySize) too small");
-    _Static_assert(sizeof(void *) >= sizeof(memoryAddress), "sizeof(memoryAddress) too small");
+    void *memoryAddress = 0;
+    size_t memorySize = 0;
 
     if (self->xferIsActive) {
         return NegativeResponse(self, kConditionsNotCorrect);
@@ -637,38 +707,15 @@ static uint8_t _0x34_RequestDownload(UDSServer_t *self) {
         return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
     }
 
-    uint8_t dataFormatIdentifier = self->recv_buf[1];
-    uint8_t memorySizeLength = (self->recv_buf[2] & 0xF0) >> 4;
-    uint8_t memoryAddressLength = self->recv_buf[2] & 0x0F;
-
-    if (memorySizeLength == 0 || memorySizeLength > sizeof(size_t)) {
-        return NegativeResponse(self, kRequestOutOfRange);
-    }
-
-    if (memoryAddressLength == 0 || memoryAddressLength > sizeof(void *)) {
-        return NegativeResponse(self, kRequestOutOfRange);
-    }
-
-    if (self->recv_size < UDS_0X34_REQ_BASE_LEN + memorySizeLength + memoryAddressLength) {
-        return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
-    }
-
-    for (int byteIdx = 0; byteIdx < memoryAddressLength; byteIdx++) {
-        unsigned long long byte = self->recv_buf[UDS_0X34_REQ_BASE_LEN + byteIdx];
-        uint8_t shiftBytes = memoryAddressLength - 1 - byteIdx;
-        memoryAddress |= byte << (8 * shiftBytes);
-    }
-
-    for (int byteIdx = 0; byteIdx < memorySizeLength; byteIdx++) {
-        unsigned long long byte = self->recv_buf[UDS_0X34_REQ_BASE_LEN + memoryAddressLength + byteIdx];
-        uint8_t shiftBytes = memorySizeLength - 1 - byteIdx;
-        memorySize |= byte << (8 * shiftBytes);
+    err = decodeAddressAndLength(self, &self->recv_buf[2], &memoryAddress, &memorySize);
+    if (kPositiveResponse != err) {
+        return NegativeResponse(self, err);
     }
 
     UDSRequestDownloadArgs_t args = {
-        .addr = (void *)memoryAddress,
+        .addr = memoryAddress,
         .size = memorySize,
-        .dataFormatIdentifier = dataFormatIdentifier,
+        .dataFormatIdentifier = self->recv_buf[1],
         .maxNumberOfBlockLength = UDS_SERVER_DEFAULT_XFER_DATA_MAX_BLOCKLENGTH,
     };
 
@@ -686,6 +733,7 @@ static uint8_t _0x34_RequestDownload(UDSServer_t *self) {
     ResetTransfer(self);
     self->xferIsActive = true;
     self->xferTotalBytes = memorySize;
+    self->xferBlockLength = args.maxNumberOfBlockLength;
 
     // ISO-14229-1:2013 Table 401:
     uint8_t lengthFormatIdentifier = sizeof(args.maxNumberOfBlockLength) << 4;
@@ -709,6 +757,60 @@ static uint8_t _0x34_RequestDownload(UDSServer_t *self) {
         self->send_buf[UDS_0X34_RESP_BASE_LEN + idx] = byte;
     }
     self->send_size = UDS_0X34_RESP_BASE_LEN + sizeof(args.maxNumberOfBlockLength);
+    return kPositiveResponse;
+}
+
+static uint8_t _0x35_RequestUpload(UDSServer_t *self) {
+    uint8_t err;
+    void *memoryAddress = 0;
+    size_t memorySize = 0;
+
+    if (self->xferIsActive) {
+        return NegativeResponse(self, kConditionsNotCorrect);
+    }
+
+    if (self->recv_size < UDS_0X35_REQ_BASE_LEN) {
+        return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
+    }
+
+    err = decodeAddressAndLength(self, &self->recv_buf[2], &memoryAddress, &memorySize);
+    if (kPositiveResponse != err) {
+        return NegativeResponse(self, err);
+    }
+
+    UDSRequestUploadArgs_t args = {
+        .addr = memoryAddress,
+        .size = memorySize,
+        .dataFormatIdentifier = self->recv_buf[1],
+        .maxNumberOfBlockLength = UDS_SERVER_DEFAULT_XFER_DATA_MAX_BLOCKLENGTH,
+    };
+
+    err = self->fn(self, UDS_SRV_EVT_RequestUpload, &args);
+
+    if (args.maxNumberOfBlockLength < 3) {
+        UDS_DBG_PRINT("ERROR: maxNumberOfBlockLength too short");
+        return NegativeResponse(self, kGeneralProgrammingFailure);
+    }
+
+    if (kPositiveResponse != err) {
+        return NegativeResponse(self, err);
+    }
+
+    ResetTransfer(self);
+    self->xferIsActive = true;
+    self->xferTotalBytes = memorySize;
+    self->xferBlockLength = args.maxNumberOfBlockLength;
+
+    uint8_t lengthFormatIdentifier = sizeof(args.maxNumberOfBlockLength) << 4;
+
+    self->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_REQUEST_UPLOAD);
+    self->send_buf[1] = lengthFormatIdentifier;
+    for (uint8_t idx = 0; idx < sizeof(args.maxNumberOfBlockLength); idx++) {
+        uint8_t shiftBytes = sizeof(args.maxNumberOfBlockLength) - 1 - idx;
+        uint8_t byte = args.maxNumberOfBlockLength >> (shiftBytes * 8);
+        self->send_buf[UDS_0X35_RESP_BASE_LEN + idx] = byte;
+    }
+    self->send_size = UDS_0X35_RESP_BASE_LEN + sizeof(args.maxNumberOfBlockLength);
     return kPositiveResponse;
 }
 
@@ -744,6 +846,7 @@ static uint8_t _0x36_TransferData(UDSServer_t *self) {
     UDSTransferDataArgs_t args = {
         .data = &self->recv_buf[UDS_0X36_REQ_BASE_LEN],
         .len = self->recv_size - UDS_0X36_REQ_BASE_LEN,
+        .maxRespLen = self->xferBlockLength - UDS_0X36_RESP_BASE_LEN,
         .copyResponse = safe_copy,
     };
 
@@ -760,7 +863,6 @@ static uint8_t _0x36_TransferData(UDSServer_t *self) {
     case kRequestCorrectlyReceived_ResponsePending:
         return NegativeResponse(self, kRequestCorrectlyReceived_ResponsePending);
     default:
-        err = kGeneralProgrammingFailure;
         goto fail;
     }
 
@@ -842,7 +944,7 @@ static UDSService getServiceForSID(uint8_t sid) {
     case kSID_READ_DATA_BY_IDENTIFIER:
         return _0x22_ReadDataByIdentifier;
     case kSID_READ_MEMORY_BY_ADDRESS:
-        return NULL;
+        return _0x23_ReadMemoryByAddress;
     case kSID_READ_SCALING_DATA_BY_IDENTIFIER:
         return NULL;
     case kSID_SECURITY_ACCESS:
@@ -862,7 +964,7 @@ static UDSService getServiceForSID(uint8_t sid) {
     case kSID_REQUEST_DOWNLOAD:
         return _0x34_RequestDownload;
     case kSID_REQUEST_UPLOAD:
-        return NULL;
+        return _0x35_RequestUpload;
     case kSID_TRANSFER_DATA:
         return _0x36_TransferData;
     case kSID_REQUEST_TRANSFER_EXIT:
@@ -903,6 +1005,8 @@ static uint8_t evaluateServiceResponse(UDSServer_t *self, const uint8_t addressi
     if (NULL == service || NULL == self->fn) {
         return NegativeResponse(self, kServiceNotSupported);
     }
+    assert(service);
+    assert(self->fn); // service handler functions will call self->fn. it must be valid
 
     switch (sid) {
     /* CASE Service_with_sub-function */
@@ -1111,11 +1215,15 @@ void UDSServerPoll(UDSServer_t *self) {
     UDSTpAddr_t ta_type = kTpAddrTypePhysical;
     if (UDSTimeAfter(UDSMillis(), self->p2_timer)) {
         size = self->tp->recv(self->tp, self->recv_buf, self->recv_buf_size, &ta_type);
-        assert(size >= 0); // what to do if recv fails?
         if (size > 0) {
             self->recv_size = size;
             ProcessLink(self, ta_type);
             self->p2_timer = UDSMillis() + self->p2_ms;
+        } else if (size == 0) {
+            ;
+        } else {
+            UDSErr_t err = UDS_ERR_TPORT;
+            self->fn(self, UDS_SRV_EVT_Err, &err);
         }
     }
 }
@@ -1132,7 +1240,7 @@ static void clearRequestContext(UDSClient_t *client) {
     client->recv_size = 0;
     client->send_size = 0;
     client->state = kRequestStateIdle;
-    client->err = kUDS_CLIENT_OK;
+    client->err = UDS_OK;
 }
 
 UDSErr_t UDSClientInit(UDSClient_t *client, const UDSClientConfig_t *cfg) {
@@ -1198,14 +1306,14 @@ static UDSClientError_t _SendRequest(UDSClient_t *client) {
 
     changeState(client, kRequestStateSending);
     UDSClientPoll(client);
-    return kUDS_CLIENT_OK;
+    return UDS_OK;
 }
 
 #define PRE_REQUEST_CHECK()                                                                        \
     if (client->err)                                                                               \
         return client->err;                                                                        \
     if (kRequestStateIdle != client->state) {                                                      \
-        client->err = kUDS_CLIENT_ERR_REQ_NOT_SENT_SEND_IN_PROGRESS;                               \
+        client->err = UDS_ERR_BUSY;                                                                \
         return client->err;                                                                        \
     }                                                                                              \
     clearRequestContext(client);
@@ -1253,7 +1361,7 @@ UDSClientError_t UDSSendRDBI(UDSClient_t *client, const uint16_t *didList,
     for (int i = 0; i < numDataIdentifiers; i++) {
         uint16_t offset = 1 + sizeof(uint16_t) * i;
         if (offset + 2 > client->send_buf_size) {
-            return kUDS_CLIENT_ERR_REQ_NOT_SENT_INVALID_ARGS;
+            return UDS_ERR_INVALID_ARG;
         }
         (client->send_buf + offset)[0] = (didList[i] & 0xFF00) >> 8;
         (client->send_buf + offset)[1] = (didList[i] & 0xFF);
@@ -1269,7 +1377,7 @@ UDSClientError_t UDSSendWDBI(UDSClient_t *client, uint16_t dataIdentifier, const
     assert(size);
     client->send_buf[0] = kSID_WRITE_DATA_BY_IDENTIFIER;
     if (client->send_buf_size <= 3 || size > client->send_buf_size - 3) {
-        return kUDS_CLIENT_ERR_REQ_NOT_SENT_BUF_TOO_SMALL;
+        return UDS_ERR_BUFSIZ;
     }
     client->send_buf[1] = (dataIdentifier & 0xFF00) >> 8;
     client->send_buf[2] = (dataIdentifier & 0xFF);
@@ -1300,7 +1408,7 @@ UDSClientError_t UDSSendRoutineCtrl(UDSClient_t *client, enum RoutineControlType
     if (size) {
         assert(data);
         if (size > client->send_buf_size - UDS_0X31_REQ_MIN_LEN) {
-            return kUDS_CLIENT_ERR_REQ_NOT_SENT_BUF_TOO_SMALL;
+            return UDS_ERR_BUFSIZ;
         }
         memmove(&client->send_buf[UDS_0X31_REQ_MIN_LEN], data, size);
     } else {
@@ -1418,9 +1526,6 @@ UDSClientError_t UDSSendTransferDataStream(UDSClient_t *client, uint8_t blockSeq
     client->send_buf[1] = blockSequenceCounter;
 
     uint16_t size = fread(&client->send_buf[2], 1, blockLength - 2, fd);
-    if (size == 0) {
-        return kUDS_CLIENT_ERR_REQ_NOT_SENT_EOF;
-    }
     UDS_DBG_PRINT("size: %d, blocklength: %d\n", size, blockLength);
     client->send_size = UDS_0X36_REQ_BASE_LEN + size;
     return _SendRequest(client);
@@ -1465,7 +1570,7 @@ UDSClientError_t UDSCtrlDTCSetting(UDSClient_t *client, uint8_t dtcSettingType, 
     } else {
         assert(size > 0);
         if (size > client->send_buf_size - 2) {
-            return kUDS_CLIENT_ERR_REQ_NOT_SENT_BUF_TOO_SMALL;
+            return UDS_ERR_BUFSIZ;
         }
         memmove(&client->send_buf[2], data, size);
     }
@@ -1487,14 +1592,14 @@ UDSClientError_t UDSSendSecurityAccess(UDSClient_t *client, uint8_t level, uint8
                                        uint16_t size) {
     PRE_REQUEST_CHECK();
     if (UDSSecurityAccessLevelIsReserved(level)) {
-        return kUDS_CLIENT_ERR_REQ_NOT_SENT_INVALID_ARGS;
+        return UDS_ERR_INVALID_ARG;
     }
     client->send_buf[0] = kSID_SECURITY_ACCESS;
     client->send_buf[1] = level;
     if (size) {
         assert(data);
         if (size > client->send_buf_size - UDS_0X27_REQ_BASE_LEN) {
-            return kUDS_CLIENT_ERR_REQ_NOT_SENT_BUF_TOO_SMALL;
+            return UDS_ERR_BUFSIZ;
         }
     } else {
         assert(NULL == data);
@@ -1533,7 +1638,7 @@ static UDSClientError_t checkRequestDownloadResponse(UDSClient_t *client, UDSSeq
     }
     seq->blockLength = resp.maxNumberOfBlockLength;
     if (0 == resp.maxNumberOfBlockLength) {
-        return kUDS_CLIENT_ERR_RESP_SCHEMA_INVALID; // 响应格式对不上孚能规范
+        return UDS_ERR;
     }
 
     return kUDS_SEQ_ADVANCE;
@@ -1549,9 +1654,9 @@ static UDSClientError_t transferData(UDSClient_t *client, UDSSequence_t *sequenc
     UDSClientDownloadSequence_t *seq = (UDSClientDownloadSequence_t *)sequence;
     if (kRequestStateIdle == client->state) {
         if (ferror(seq->fd)) {
-            fclose(seq->fd);
-            return kUDS_SEQ_ERR_FERROR; // 读取文件故障
-        } else if (feof(seq->fd)) {     // 传完了
+            UDS_DBG_PRINT("ferror: %d", ferror(seq->fd));
+            return UDS_ERR;
+        } else if (feof(seq->fd)) { // 传完了
             return kUDS_SEQ_ADVANCE;
         } else {
             UDSSendTransferDataStream(client, seq->blockSequenceCounter++, seq->blockLength,
@@ -1585,7 +1690,7 @@ UDSClientError_t UDSConfigDownload(UDSClientDownloadSequence_t *sequence,
     sequence->memoryAddress = memoryAddress;
     sequence->memorySize = memorySize;
     sequence->fd = fd;
-    return kUDS_CLIENT_OK;
+    return UDS_OK;
 }
 
 /**
@@ -1601,15 +1706,15 @@ UDSClientError_t UDSUnpackSecurityAccessResponse(const UDSClient_t *client,
     assert(client);
     assert(resp);
     if (UDS_RESPONSE_SID_OF(kSID_SECURITY_ACCESS) != client->recv_buf[0]) {
-        return kUDS_CLIENT_ERR_RESP_SID_MISMATCH;
+        return UDS_ERR_SID_MISMATCH;
     }
     if (client->recv_size < UDS_0X27_RESP_BASE_LEN) {
-        return kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+        return UDS_ERR_RESP_TOO_SHORT;
     }
     resp->securityAccessType = client->recv_buf[1];
     resp->securitySeedLength = client->recv_size - UDS_0X27_RESP_BASE_LEN;
     resp->securitySeed = resp->securitySeedLength == 0 ? NULL : &client->recv_buf[2];
-    return kUDS_CLIENT_OK;
+    return UDS_OK;
 }
 
 /**
@@ -1625,17 +1730,17 @@ UDSClientError_t UDSUnpackRoutineControlResponse(const UDSClient_t *client,
     assert(client);
     assert(resp);
     if (UDS_RESPONSE_SID_OF(kSID_ROUTINE_CONTROL) != client->recv_buf[0]) {
-        return kUDS_CLIENT_ERR_RESP_SID_MISMATCH;
+        return UDS_ERR_SID_MISMATCH;
     }
     if (client->recv_size < UDS_0X31_RESP_MIN_LEN) {
-        return kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+        return UDS_ERR_RESP_TOO_SHORT;
     }
     resp->routineControlType = client->recv_buf[1];
     resp->routineIdentifier = (client->recv_buf[2] << 8) + client->recv_buf[3];
     resp->routineStatusRecordLength = client->recv_size - UDS_0X31_RESP_MIN_LEN;
     resp->routineStatusRecord =
         resp->routineStatusRecordLength == 0 ? NULL : &client->recv_buf[UDS_0X31_RESP_MIN_LEN];
-    return kUDS_CLIENT_OK;
+    return UDS_OK;
 }
 
 /**
@@ -1651,16 +1756,16 @@ UDSClientError_t UDSUnpackRequestDownloadResponse(const UDSClient_t *client,
     assert(client);
     assert(resp);
     if (UDS_RESPONSE_SID_OF(kSID_REQUEST_DOWNLOAD) != client->recv_buf[0]) {
-        return kUDS_CLIENT_ERR_RESP_SID_MISMATCH;
+        return UDS_ERR_SID_MISMATCH;
     }
     if (client->recv_size < UDS_0X34_RESP_BASE_LEN) {
-        return kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+        return UDS_ERR_RESP_TOO_SHORT;
     }
     uint8_t maxNumberOfBlockLengthSize = (client->recv_buf[1] & 0xF0) >> 4;
 
     if (sizeof(resp->maxNumberOfBlockLength) < maxNumberOfBlockLengthSize) {
         UDS_DBG_PRINT("WARNING: sizeof(maxNumberOfBlockLength) > sizeof(size_t)");
-        return kUDS_CLIENT_ERR_RESP_CANNOT_UNPACK;
+        return UDS_ERR;
     }
     resp->maxNumberOfBlockLength = 0;
     for (int byteIdx = 0; byteIdx < maxNumberOfBlockLengthSize; byteIdx++) {
@@ -1668,7 +1773,7 @@ UDSClientError_t UDSUnpackRequestDownloadResponse(const UDSClient_t *client,
         uint8_t shiftBytes = maxNumberOfBlockLengthSize - 1 - byteIdx;
         resp->maxNumberOfBlockLength |= byte << (8 * shiftBytes);
     }
-    return kUDS_CLIENT_OK;
+    return UDS_OK;
 }
 
 /**
@@ -1680,28 +1785,28 @@ UDSClientError_t UDSUnpackRequestDownloadResponse(const UDSClient_t *client,
 static UDSClientError_t _ClientValidateResponse(const UDSClient_t *client) {
 
     if (client->recv_size < 1) {
-        return kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+        return UDS_ERR_RESP_TOO_SHORT;
     }
 
     if (0x7F == client->recv_buf[0]) { // 否定响应
         if (client->recv_size < 2) {
-            return kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+            return UDS_ERR_RESP_TOO_SHORT;
         } else if (client->send_buf[0] != client->recv_buf[1]) {
-            return kUDS_CLIENT_ERR_RESP_SID_MISMATCH;
+            return UDS_ERR_SID_MISMATCH;
         } else if (kRequestCorrectlyReceived_ResponsePending == client->recv_buf[2]) {
-            return kUDS_CLIENT_OK;
+            return UDS_OK;
         } else if (client->_options_copy & NEG_RESP_IS_ERR) {
-            return kUDS_CLIENT_ERR_RESP_NEGATIVE;
+            return UDS_ERR_NEG_RESP;
         } else {
             ;
         }
     } else { // 肯定响应
         if (UDS_RESPONSE_SID_OF(client->send_buf[0]) != client->recv_buf[0]) {
-            return kUDS_CLIENT_ERR_RESP_SID_MISMATCH;
+            return UDS_ERR_SID_MISMATCH;
         }
     }
 
-    return kUDS_CLIENT_OK;
+    return UDS_OK;
 }
 
 /**
@@ -1727,7 +1832,7 @@ static inline void _ClientHandleResponse(UDSClient_t *client) {
             if (client->recv_size < UDS_0X10_RESP_LEN) {
                 UDS_DBG_PRINT("Error: SID %x response too short\n",
                               kSID_DIAGNOSTIC_SESSION_CONTROL);
-                client->err = kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+                client->err = UDS_ERR_RESP_TOO_SHORT;
                 changeState(client, kRequestStateIdle);
                 return;
             }
@@ -1766,7 +1871,7 @@ void UDSClientPoll(UDSClient_t *client) {
         ret = client->tp->send(client->tp, client->send_buf, client->send_size, ta_type);
 
         if (ret < 0) {
-            client->err = kUDS_CLIENT_ERR_REQ_NOT_SENT_TPORT_ERR;
+            client->err = UDS_ERR_TPORT;
             UDS_DBG_PRINT("tport err: %d\n", ret);
         } else if (0 == ret) {
             UDS_DBG_PRINT("send in progress...\n");
@@ -1774,7 +1879,7 @@ void UDSClientPoll(UDSClient_t *client) {
         } else if (client->send_size == ret) {
             changeState(client, kRequestStateAwaitSendComplete);
         } else {
-            client->err = kUDS_CLIENT_ERR_REQ_NOT_SENT_BUF_TOO_SMALL;
+            client->err = UDS_ERR_BUFSIZ;
         }
         break;
     }
@@ -1805,11 +1910,11 @@ void UDSClientPoll(UDSClient_t *client) {
             break;
         }
         if (ret < 0) {
-            client->err = kUDS_CLIENT_ERR_RESP_TPORT_ERR;
+            client->err = UDS_ERR_TPORT;
             changeState(client, kRequestStateIdle);
         } else if (0 == ret) {
             if (UDSTimeAfter(UDSMillis(), client->p2_timer)) {
-                client->err = kUDS_CLIENT_ERR_REQ_TIMED_OUT;
+                client->err = UDS_ERR_TIMEOUT;
                 changeState(client, kRequestStateIdle);
             }
         } else {
@@ -1820,7 +1925,7 @@ void UDSClientPoll(UDSClient_t *client) {
     }
     case kRequestStateProcessResponse: {
         client->err = _ClientValidateResponse(client);
-        if (kUDS_CLIENT_OK == client->err) {
+        if (UDS_OK == client->err) {
             _ClientHandleResponse(client);
         } else {
             changeState(client, kRequestStateIdle);
@@ -1888,22 +1993,22 @@ UDSClientError_t UDSUnpackRDBIResponse(const UDSClient_t *client, uint16_t did, 
     }
 
     if (*offset + sizeof(did) > client->recv_size) {
-        return kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+        return UDS_ERR_RESP_TOO_SHORT;
     }
 
     uint16_t theirDID = (client->recv_buf[*offset] << 8) + client->recv_buf[*offset + 1];
     if (theirDID != did) {
-        return kUDS_CLIENT_ERR_RESP_DID_MISMATCH;
+        return UDS_ERR_DID_MISMATCH;
     }
 
     if (*offset + sizeof(uint16_t) + size > client->recv_size) {
-        return kUDS_CLIENT_ERR_RESP_TOO_SHORT;
+        return UDS_ERR_RESP_TOO_SHORT;
     }
 
     memmove(data, &client->recv_buf[*offset + sizeof(uint16_t)], size);
 
     *offset += sizeof(uint16_t) + size;
-    return kUDS_CLIENT_OK;
+    return UDS_OK;
 }
 
 void UDSSequenceInit(UDSSequence_t *sequence, const UDSClientCallback *cbList,

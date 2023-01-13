@@ -2,7 +2,7 @@
  * @file iso14229.h
  * @brief ISO-14229 (UDS) server and client
  * @author driftregion
- * @version 0.5.0
+ * @version 0.6.0
  * @date 2022-12-08
  */
 
@@ -85,37 +85,28 @@ enum {
     UDS_ERR = -1,
     UDS_OK = 0,
     UDS_ERR_TPORT = 1000,
-};
 
-enum UDSClientError {
+    // Client error codes
+    UDS_ERR_RESP_TOO_SHORT, // 响应太短
+    UDS_ERR_NEG_RESP,       // 否定响应
+    UDS_ERR_DID_MISMATCH,   // 响应DID对不上期待的DID
+    UDS_ERR_SID_MISMATCH,   // 请求和响应SID对不上
+    UDS_ERR_TIMEOUT,        // 请求超时
+    UDS_ERR_BUFSIZ,         // 缓冲器不够大
+    UDS_ERR_INVALID_ARG,    // 参数不对、没发
+    UDS_ERR_BUSY,           // 在忙、没发
 
-    kUDS_CLIENT_ERR_RESP_TPORT_ERR = -14,      // 传输层故障、无法接收
-    kUDS_CLIENT_ERR_REQ_NOT_SENT_EOF = -13,    // 没发：FILE没有数据
-    kUDS_CLIENT_ERR_RESP_SCHEMA_INVALID = -12, // 数据内容或者大小不按照应用定义(如ODX)
-    kUDS_CLIENT_ERR_RESP_DID_MISMATCH = -11,            // 响应DID对不上期待的DID
-    kUDS_CLIENT_ERR_RESP_CANNOT_UNPACK = -10,           // 响应不能解析
-    kUDS_CLIENT_ERR_RESP_TOO_SHORT = -9,                // 响应太小
-    kUDS_CLIENT_ERR_RESP_NEGATIVE = -8,                 // 否定响应
-    kUDS_CLIENT_ERR_RESP_SID_MISMATCH = -7,             // 请求和响应SID对不上
-    kUDS_CLIENT_ERR_RESP_UNEXPECTED = -6,               // 突然响应
-    kUDS_CLIENT_ERR_REQ_TIMED_OUT = -5,                 // 请求超时
-    kUDS_CLIENT_ERR_REQ_NOT_SENT_TPORT_ERR = -4,        // 传输层故障、没发
-    kUDS_CLIENT_ERR_REQ_NOT_SENT_BUF_TOO_SMALL = -3,    // 传输层缓冲器不够大
-    kUDS_CLIENT_ERR_REQ_NOT_SENT_INVALID_ARGS = -2,     // 参数不对、没发
-    kUDS_CLIENT_ERR_REQ_NOT_SENT_SEND_IN_PROGRESS = -1, // 在忙、没发
-    kUDS_CLIENT_OK = 0,                                 // 流程完成
+    // TODO: remove
+    kUDS_SEQ_ERR_CLIENT_ERR, // 因为Client故障而停止
 };
 
 typedef int UDSClientError_t;
 
 enum UDSSequenceError {
-    kUDS_SEQ_ERR_FERROR = -4,        // ferror()文件故障
-    kUDS_SEQ_ERR_NULL_CALLBACK = -3, // 回调函数是NULL
-    kUDS_SEQ_ERR_CLIENT_ERR = -2,    // 因为Client故障而停止
-    kUDS_SEQ_FAIL = -1,              // 通用故障
-    kUDS_SEQ_COMPLETE = 0,           // 完成成功
-    kUDS_SEQ_RUNNING = 1,            // 流程正在跑、还没完成
-    kUDS_SEQ_ADVANCE = 2,            // 流程正在跑、还没完成
+    kUDS_SEQ_FAIL = -1,    // 通用故障
+    kUDS_SEQ_COMPLETE = 0, // 完成成功
+    kUDS_SEQ_RUNNING = 1,  // 流程正在跑、还没完成
+    kUDS_SEQ_ADVANCE = 2,  // 流程正在跑、还没完成
 };
 
 typedef int UDSSequenceError_t;
@@ -564,6 +555,7 @@ enum UDSServerEvent {
     UDS_SRV_EVT_DiagSessCtrl,         // UDSDiagSessCtrlArgs_t *
     UDS_SRV_EVT_EcuReset,             // UDSECUResetArgs_t *
     UDS_SRV_EVT_ReadDataByIdent,      // UDSRDBIArgs_t *
+    UDS_SRV_EVT_ReadMemByAddr,        // UDSReadMemByAddrArgs_t *
     UDS_SRV_EVT_CommCtrl,             // UDSCommCtrlArgs_t *
     UDS_SRV_EVT_SecAccessRequestSeed, // UDSSecAccessRequestSeedArgs_t *
     UDS_SRV_EVT_SecAccessValidateKey, // UDSSecAccessValidateKeyArgs_t *
@@ -575,6 +567,7 @@ enum UDSServerEvent {
     UDS_SRV_EVT_RequestTransferExit,  // UDSRequestTransferExitArgs_t *
     UDS_SRV_EVT_SessionTimeout,       // NULL
     UDS_SRV_EVT_PowerDown,            // UDSPowerDownArgs_t *
+    UDS_SRV_EVT_Err,                  // UDSErr_t *
 };
 
 typedef int UDSServerEvent_t;
@@ -616,6 +609,7 @@ typedef struct UDSServer {
     uint8_t xferBlockSequenceCounter;
     size_t xferTotalBytes;  // total transfer size in bytes requested by the client
     size_t xferByteCounter; // total number of bytes transferred
+    size_t xferBlockLength; // block length (convenience for the TransferData API)
 
     /**
      * @brief public subset of server state for user handlers
@@ -689,10 +683,11 @@ typedef struct {
 } UDSRDBIArgs_t;
 
 typedef struct {
-    const uint16_t dataId;     /*! WDBI Data Identifier */
-    const uint8_t *const data; /*! pointer to data */
-    const uint16_t len;        /*! length of data */
-} UDSWDBIArgs_t;
+    const void *memAddr;
+    const size_t memSize;
+    uint8_t (*copy)(UDSServer_t *srv, const void *src,
+                    uint16_t count); /*! function for copying data */
+} UDSReadMemByAddrArgs_t;
 
 typedef struct {
     enum UDSCommunicationControlType ctrlType;
@@ -714,6 +709,12 @@ typedef struct {
 } UDSSecAccessValidateKeyArgs_t;
 
 typedef struct {
+    const uint16_t dataId;     /*! WDBI Data Identifier */
+    const uint8_t *const data; /*! pointer to data */
+    const uint16_t len;        /*! length of data */
+} UDSWDBIArgs_t;
+
+typedef struct {
     const uint8_t ctrlType;      /*! routineControlType */
     const uint16_t id;           /*! routineIdentifier */
     const uint8_t *optionRecord; /*! optional data */
@@ -726,13 +727,22 @@ typedef struct {
     const void *addr;                   /*! requested address */
     const size_t size;                  /*! requested download size */
     const uint8_t dataFormatIdentifier; /*! optional specifier for format of data */
-    uint16_t maxNumberOfBlockLength; /*! response: inform client how many data bytes to send in each
-                                        `TransferData` request */
+    uint16_t maxNumberOfBlockLength;    /*! optional response: inform client how many data bytes to
+                                           send in each    `TransferData` request */
 } UDSRequestDownloadArgs_t;
+
+typedef struct {
+    const void *addr;                   /*! requested address */
+    const size_t size;                  /*! requested download size */
+    const uint8_t dataFormatIdentifier; /*! optional specifier for format of data */
+    uint16_t maxNumberOfBlockLength;    /*! optional response: inform client how many data bytes to
+                                           send in each    `TransferData` request */
+} UDSRequestUploadArgs_t;
 
 typedef struct {
     const uint8_t *const data; /*! transfer data */
     const uint16_t len;        /*! transfer data length */
+    const uint16_t maxRespLen; /*! don't send more than this many bytes with copyResponse */
     uint8_t (*copyResponse)(
         UDSServer_t *srv, const void *src,
         uint16_t len); /*! function for copying transfer data response data (optional) */

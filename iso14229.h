@@ -18,7 +18,7 @@ extern "C" {
 
 #define UDS_TP_CUSTOM 0
 #define UDS_TP_ISOTP_C 1
-#define UDS_TP_LINUX_SOCKET 2
+#define UDS_TP_ISOTP_SOCKET 2
 
 #if !defined(UDS_ARCH)
 #if defined(__unix__) || defined(__APPLE__)
@@ -28,7 +28,7 @@ extern "C" {
 
 #if !defined(UDS_TP)
 #if (UDS_ARCH == UDS_ARCH_UNIX)
-#define UDS_TP UDS_TP_LINUX_SOCKET
+#define UDS_TP UDS_TP_ISOTP_SOCKET
 #endif
 #endif
 
@@ -43,7 +43,7 @@ extern "C" {
 #include "isotp-c/isotp_config.h"
 #include "isotp-c/isotp_defines.h"
 #include "isotp-c/isotp_user.h"
-#elif (UDS_TP == UDS_TP_LINUX_SOCKET)
+#elif (UDS_TP == UDS_TP_ISOTP_SOCKET)
 #include <errno.h>
 #include <linux/can.h>
 #include <linux/can/isotp.h>
@@ -78,6 +78,12 @@ library
 #ifndef UDS_DBG_PRINT
 #define UDS_DBG_PRINT(fmt, ...) ((void)fmt)
 #endif
+
+#define UDS_DBG_PRINTHEX(addr, len)  \
+    for (int i = 0; i < len; i++) { \
+        UDS_DBG_PRINT("%02x,", ((uint8_t *)addr)[i]); \
+    } \
+    UDS_DBG_PRINT("\n");
 
 typedef int UDSErr_t;
 
@@ -229,7 +235,8 @@ enum UDSTpAddr {
 typedef uint8_t UDSTpAddr_t;
 
 enum UDSTpStatusFlags {
-    TP_SEND_INPROGRESS = 0x00000001,
+    UDS_TP_IDLE = 0x00000000,
+    UDS_TP_SEND_IN_PROGRESS = 0x00000001,
 };
 
 typedef uint32_t UDSTpStatus_t;
@@ -266,18 +273,19 @@ typedef struct UDSTpHandle {
      * @brief 轮询
      */
     UDSTpStatus_t (*poll)(struct UDSTpHandle *hdl);
-    void *impl; // opaque pointer to transport implementation
 } UDSTpHandle_t;
 
 #if UDS_TP == UDS_TP_ISOTP_C
 typedef struct {
+    UDSTpHandle_t hdl;
     IsoTpLink phys_link;
     IsoTpLink func_link;
     uint8_t func_recv_buf[8];
     uint8_t func_send_buf[8];
 } UDSTpIsoTpC_t;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
 typedef struct {
+    UDSTpHandle_t hdl;
     int phys_fd;
     int func_fd;
 } UDSTpLinuxIsoTp_t;
@@ -329,7 +337,7 @@ typedef struct {
     uint16_t phys_recv_id;
     uint16_t phys_send_id;
     uint16_t func_send_id;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
     const char *if_name;
     uint16_t phys_recv_id;
     uint16_t phys_send_id;
@@ -412,11 +420,9 @@ typedef struct UDSClient {
 
 #if UDS_TP == UDS_TP_CUSTOM
 #elif UDS_TP == UDS_TP_ISOTP_C
-    UDSTpHandle_t _tp_hdl;
-    UDSTpIsoTpC_t tp_impl;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
-    UDSTpHandle_t _tp_hdl;
-    UDSTpLinuxIsoTp_t tp_impl;
+    UDSTpIsoTpC_t _tp_impl;
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
+    UDSTpLinuxIsoTp_t _tp_impl;
 #endif
 
 } UDSClient_t;
@@ -527,6 +533,10 @@ UDSClientError_t UDSConfigDownload(UDSClientDownloadSequence_t *sequence,
 //                              Server
 // ========================================================================
 
+#ifndef UDS_SERVER_DEFAULT_POWER_DOWN_TIME_MS
+#define UDS_SERVER_DEFAULT_POWER_DOWN_TIME_MS (10)
+#endif
+
 #ifndef UDS_SERVER_DEFAULT_P2_MS
 #define UDS_SERVER_DEFAULT_P2_MS (50)
 #endif
@@ -566,8 +576,7 @@ enum UDSServerEvent {
     UDS_SRV_EVT_TransferData,         // UDSTransferDataArgs_t *
     UDS_SRV_EVT_RequestTransferExit,  // UDSRequestTransferExitArgs_t *
     UDS_SRV_EVT_SessionTimeout,       // NULL
-    UDS_SRV_EVT_PowerDown,            // UDSPowerDownArgs_t *
-    UDS_SRV_EVT_Err,                  // UDSErr_t *
+    UDS_SRV_EVT_DoScheduledReset,     // enum UDSEcuResetType *
 };
 
 typedef int UDSServerEvent_t;
@@ -591,7 +600,7 @@ typedef struct UDSServer {
                          // server for the activated diagnostic session.
     uint16_t s3_ms;      // Session timeout
 
-    bool ecuResetScheduled;            // indicates that an ECUReset has been scheduled
+    enum UDSECUResetType ecuResetScheduled; // nonzero indicates that an ECUReset has been scheduled
     uint32_t ecuResetTimer;            // for delaying resetting until a response
                                        // has been sent to the client
     uint32_t p2_timer;                 // for rate limiting server responses
@@ -632,11 +641,9 @@ typedef struct UDSServer {
 
 #if UDS_TP == UDS_TP_CUSTOM
 #elif UDS_TP == UDS_TP_ISOTP_C
-    UDSTpHandle_t _tp_hdl;
-    UDSTpIsoTpC_t tp_impl;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
-    UDSTpHandle_t _tp_hdl;
-    UDSTpLinuxIsoTp_t tp_impl;
+    UDSTpIsoTpC_t _tp_impl;
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
+    UDSTpLinuxIsoTp_t _tp_impl;
 #endif
 } UDSServer_t;
 
@@ -648,7 +655,7 @@ typedef struct {
     uint16_t phys_send_id;
     uint16_t phys_recv_id;
     uint16_t func_recv_id;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
     const char *if_name;
     uint16_t phys_send_id;
     uint16_t phys_recv_id;
@@ -667,14 +674,8 @@ typedef struct {
 typedef struct {
     const enum UDSECUResetType
         type; /**< \~chinese 客户端请求的复位类型 \~english reset type requested by client */
-    uint8_t powerDownTime; /**< Optional response: notify client of time until shutdown (0-254) 255
-                              indicates that a time is not available. */
+    uint32_t powerDownTimeMillis; /**< when this much time has elapsed after a kPositiveResponse, a UDS_SRV_EVT_DoScheduledReset will be issued */
 } UDSECUResetArgs_t;
-
-typedef struct {
-    const enum UDSECUResetType
-        type; /**< \~chinese 客户端请求的复位类型 \~english reset type requested by client */
-} UDSPowerDownArgs_t;
 
 typedef struct {
     const uint16_t dataId; /*! RDBI Data Identifier */

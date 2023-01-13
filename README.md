@@ -53,7 +53,7 @@ int main() {
 | Define | Description | Valid values |
 | - | - | - |
 | `UDS_ARCH` | Select a porting target | `UDS_ARCH_CUSTOM`, `UDS_ARCH_UNIX` |
-| `UDS_TP` | Select a transport layer | `UDS_TP_ISOTP_C`, `UDS_TP_LINUX_SOCKET` |
+| `UDS_TP` | Select a transport layer | `UDS_TP_ISOTP_C`, `UDS_TP_ISOTP_SOCKET` |
 | `UDS_CUSTOM_MILLIS` | Use your own `millis()` implementation | defined or not defined |
 
 Features:
@@ -80,7 +80,7 @@ Features:
 | 0x2F | input control by identifier | ❌ |
 | 0x31 | routine control | ✅ |
 | 0x34 | request download | ✅ |
-| 0x35 | request upload | ❌ |
+| 0x35 | request upload | ✅ |
 | 0x36 | transfer data | ✅ |
 | 0x37 | request transfer exit | ✅ |
 | 0x38 | request file transfer | ❌ |
@@ -396,6 +396,18 @@ MIT
 - usability: default transport layer configs are now built-in
 - API cleanup: use `UDS` prefix on all exported functions
 - API cleanup: use a single callback function for all server events
+
+# 0.6.0
+- breaking API changes:
+    - `UDSClientError_t` merged into `UDSErr_t`
+    - `TP_SEND_INPROGRESS` renamed to `UDS_TP_SEND_IN_PROGRESS`
+    - refactored `UDSTpHandle_t` to encourage struct inheritance
+    - `UDS_TP_LINUX_SOCKET` renamed to `UDS_TP_ISOTP_SOCKET`
+- added server fuzz test and qemu tests
+- cleaned up example tests, added isotp-c on socketcan to examples
+- added `UDS_SRV_EVT_DoScheduledReset`
+
+- TODO: remove UDSClientError_t
 
 ---
 

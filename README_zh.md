@@ -68,7 +68,7 @@ int main() {
 | 0x2F | input control by identifier | ❌ |
 | 0x31 | routine control | ✅ |
 | 0x34 | request download | ✅ |
-| 0x35 | request upload | ❌ |
+| 0x35 | request upload | ✅ |
 | 0x36 | transfer data | ✅ |
 | 0x37 | request transfer exit | ✅ |
 | 0x38 | request file transfer | ❌ |

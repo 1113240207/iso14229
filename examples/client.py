@@ -51,16 +51,11 @@ UDSONCAN_CLIENT_CONFIG = {
         'exception_on_negative_response'	: False,	
 }
 
-
-if __name__ == "__main__":
-    if (len(sys.argv) < 2):
-        print(f"usage: {sys.argv[0]} [socketCAN link]")
-        exit(-1)
-
+def run():
     with Client(
             conn=PythonIsoTpConnection(
                 isotp_layer=isotp.CanStack(
-                    bus=(SocketcanBus(channel=sys.argv[1])),
+                    bus=(SocketcanBus(channel="vcan0")),
                     address=isotp.Address(rxid=SRV_SEND_ID, txid=SRV_PHYS_RECV_ID),
                     params = {
                         "tx_data_min_length": 8,
@@ -107,3 +102,6 @@ if __name__ == "__main__":
         print(f"rdbi data: {response.service_data.values[0x0001]}")
 
 
+
+if __name__ == "__main__":
+    run()

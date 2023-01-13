@@ -32,15 +32,7 @@ static ssize_t _recv(UDSTpHandle_t *hdl, void *buf, size_t count, UDSTpAddr_t *t
     return count;
 }
 
-static void printhex(const uint8_t *addr, int len) {
-    for (int i = 0; i < len; i++) {
-        printf("%02x,", addr[i]);
-    }
-    printf("\n");
-}
-
 ssize_t _send(struct UDSTpHandle *hdl, const void *buf, size_t count, UDSTpAddr_t ta_type) {
-    // printhex(buf, count);
     return count;
 }
 

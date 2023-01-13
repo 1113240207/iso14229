@@ -1,17 +1,23 @@
+ifeq "$(TP)" "ISOTP_C"
+SRCS += isotp-c/isotp.c examples/isotp-c_on_socketcan.c
+CFLAGS += -DUDS_TP=UDS_TP_ISOTP_C
+endif
 
 unit_test: CFLAGS+=-DUDS_TP=UDS_TP_CUSTOM -DUDS_CUSTOM_MILLIS
 unit_test: Makefile iso14229.h iso14229.c test_iso14229.c
 	$(CC) iso14229.c test_iso14229.c $(CFLAGS) $(LDFLAGS) -o test_iso14229
 	$(RUN) ./test_iso14229
 
-client: examples/client.c examples/uds_params.h iso14229.h iso14229.c Makefile
-	$(CC) iso14229.c $< $(CFLAGS) -o $@
+client: CFLAGS+=-g -DUDS_DBG_PRINT=printf
+client: examples/client.c examples/uds_params.h iso14229.h iso14229.c Makefile $(SRCS)
+	$(CC) iso14229.c $(SRCS) $< $(CFLAGS) -o $@
 
-server: examples/server.c examples/uds_params.h iso14229.h iso14229.c Makefile
-	$(CC) iso14229.c $< $(CFLAGS) -o $@
+server: CFLAGS+=-g -DUDS_DBG_PRINT=printf
+server: examples/server.c examples/uds_params.h iso14229.h iso14229.c Makefile $(SRCS)
+	$(CC) iso14229.c $(SRCS) $< $(CFLAGS) -o $@
 
-test_examples: client server test_examples.sh
-	$(RUN) ./test_examples.sh
+test_examples: test_examples.py
+	$(RUN) ./test_examples.py
 
 uds_prefix: CFLAGS+=-DUDS_TP=UDS_TP_CUSTOM -DUDS_CUSTOM_MILLIS
 uds_prefix: iso14229.c iso14229.h

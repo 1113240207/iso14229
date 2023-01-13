@@ -81,13 +81,13 @@ static UDSTpStatus_t tp_poll(UDSTpHandle_t *hdl) {
     assert(hdl);
     UDSTpStatus_t status = 0;
 #if UDS_TP == UDS_TP_ISOTP_C
-    UDSTpIsoTpC_t *impl = hdl->impl;
+    UDSTpIsoTpC_t *impl = (UDSTpIsoTpC_t *)hdl;
     isotp_poll(&impl->phys_link);
     isotp_poll(&impl->func_link);
     if (impl->phys_link.send_status == ISOTP_SEND_STATUS_INPROGRESS) {
-        status |= TP_SEND_INPROGRESS;
+        status |= UDS_TP_SEND_IN_PROGRESS;
     }
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
 #endif
     return status;
 }
@@ -95,15 +95,14 @@ static UDSTpStatus_t tp_poll(UDSTpHandle_t *hdl) {
 
 #if UDS_TP == UDS_TP_CUSTOM
 #else
-static ssize_t tp_recv(struct UDSTpHandle *hdl, void *buf, size_t count, UDSTpAddr_t *ta_type) {
+static ssize_t tp_recv(UDSTpHandle_t *hdl, void *buf, size_t count, UDSTpAddr_t *ta_type) {
     assert(hdl);
     assert(ta_type);
     assert(buf);
-
+    int ret = -1;
 #if UDS_TP == UDS_TP_ISOTP_C
     uint16_t size = 0;
-    int ret = 0;
-    UDSTpIsoTpC_t *impl = hdl->impl;
+    UDSTpIsoTpC_t *impl = (UDSTpIsoTpC_t *)hdl;
     struct {
         IsoTpLink *link;
         UDSTpAddr_t ta_type;
@@ -113,47 +112,57 @@ static ssize_t tp_recv(struct UDSTpHandle *hdl, void *buf, size_t count, UDSTpAd
         switch (ret) {
         case ISOTP_RET_OK:
             *ta_type = arr[i].ta_type;
-            return size;
+            ret = size;
+            goto done;
         case ISOTP_RET_NO_DATA:
+            ret = 0;
             continue;
         case ISOTP_RET_ERROR:
-            return ISOTP_RET_ERROR;
+            ret = -1;
+            goto done;
         default:
-            return -2;
+            ret = -2;
+            goto done;
         }
     }
-    return 0;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
-    UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl->impl;
-    int size = 0;
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
+    UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl;
     struct {
         int fd;
         UDSTpAddr_t ta_type;
     } arr[] = {{impl->phys_fd, kTpAddrTypePhysical}, {impl->func_fd, kTpAddrTypeFunctional}};
     for (size_t i = 0; i < sizeof(arr) / sizeof(arr[0]); i++) {
-        size = read(arr[i].fd, buf, count);
-        if (size < 0) {
+        ret = read(arr[i].fd, buf, count);
+        if (ret < 0) {
             if (EAGAIN == errno || EWOULDBLOCK == errno) {
+                ret = 0;
                 continue;
+            } else {
+                goto done;
             }
-            printf("read. fd: %d, %s\n", arr[i].fd, strerror(errno));
         } else {
             *ta_type = arr[i].ta_type;
-            return size;
+            goto done;
         }
     }
-    return 0;
 #endif
+    done:
+    if(ret > 0) {
+        UDS_DBG_PRINT("<<< ");
+        UDS_DBG_PRINTHEX(buf, ret);
+    }
+    return ret;
 }
 #endif
 
 #if UDS_TP == UDS_TP_CUSTOM
 #else
-static ssize_t tp_send(struct UDSTpHandle *hdl, const void *buf, size_t count,
+static ssize_t tp_send(UDSTpHandle_t *hdl, const void *buf, size_t count,
                        UDSTpAddr_t ta_type) {
     assert(hdl);
+    ssize_t ret = -1;
 #if UDS_TP == UDS_TP_ISOTP_C
-    UDSTpIsoTpC_t *impl = hdl->impl;
+    UDSTpIsoTpC_t *impl = (UDSTpIsoTpC_t *)hdl;
     IsoTpLink *link = NULL;
     switch (ta_type) {
     case kTpAddrTypePhysical:
@@ -163,19 +172,23 @@ static ssize_t tp_send(struct UDSTpHandle *hdl, const void *buf, size_t count,
         link = &impl->func_link;
         break;
     default:
-        return -4;
+        ret = -4;
+        goto done;
     }
+
     int send_status = isotp_send(link, buf, count);
     switch (send_status) {
     case ISOTP_RET_OK:
-        return count;
+        ret = count;
+        goto done;
     case ISOTP_RET_INPROGRESS:
     case ISOTP_RET_OVERFLOW:
     default:
-        return send_status;
+        ret = send_status;
+        goto done;
     }
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
-    UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl->impl;
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
+    UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl;
     int fd;
     switch (ta_type) {
     case kTpAddrTypePhysical:
@@ -185,19 +198,22 @@ static ssize_t tp_send(struct UDSTpHandle *hdl, const void *buf, size_t count,
         fd = impl->func_fd;
         break;
     default:
-        return -4;
+        ret = -4;
+        goto done;
     }
-    int result = write(fd, buf, count);
-    if (result < 0) {
-        printf("write. fd: %d, errno: %d\n", fd, errno);
-        perror("");
+    ret = write(fd, buf, count);
+    if (ret < 0) {
+        perror("write");
     }
-    return result;
 #endif
+    done:
+    UDS_DBG_PRINT(">>> ");
+    UDS_DBG_PRINTHEX(buf, ret);
+    return ret;
 }
 #endif
 
-#if UDS_TP == UDS_TP_LINUX_SOCKET
+#if UDS_TP == UDS_TP_ISOTP_SOCKET
 static int LinuxSockBind(const char *if_name, uint16_t rxid, uint16_t txid) {
     int fd = 0;
     if ((fd = socket(AF_CAN, SOCK_DGRAM | SOCK_NONBLOCK, CAN_ISOTP)) < 0) {
@@ -237,7 +253,7 @@ static int LinuxSockBind(const char *if_name, uint16_t rxid, uint16_t txid) {
 static int LinuxSockTpOpen(UDSTpHandle_t *hdl, const char *if_name, uint16_t phys_rxid,
                            uint16_t phys_txid, uint16_t func_rxid, uint16_t func_txid) {
     assert(if_name);
-    UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl->impl;
+    UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl;
     hdl->recv = tp_recv;
     hdl->send = tp_send;
     hdl->poll = tp_poll;
@@ -251,7 +267,7 @@ static int LinuxSockTpOpen(UDSTpHandle_t *hdl, const char *if_name, uint16_t phy
 
 void LinuxSockTpClose(UDSTpHandle_t *hdl) {
     if (hdl) {
-        UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl->impl;
+        UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl;
         if (impl) {
             if (close(impl->phys_fd) < 0) {
                 perror("failed to close socket");
@@ -262,7 +278,7 @@ void LinuxSockTpClose(UDSTpHandle_t *hdl) {
         }
     }
 }
-#endif // #if UDS_TP == UDS_TP_LINUX_SOCKET
+#endif // #if UDS_TP == UDS_TP_ISOTP_SOCKET
 // ========================================================================
 //                              Common
 // ========================================================================
@@ -357,14 +373,15 @@ static uint8_t _0x11_ECUReset(UDSServer_t *self) {
 
     UDSECUResetArgs_t args = {
         .type = resetType,
-        .powerDownTime = 0,
+        .powerDownTimeMillis = UDS_SERVER_DEFAULT_POWER_DOWN_TIME_MS,
     };
 
     uint8_t err = self->fn(self, UDS_SRV_EVT_EcuReset, &args);
 
     if (kPositiveResponse == err) {
         self->notReadyToReceive = true;
-        self->ecuResetScheduled = true;
+        self->ecuResetScheduled = resetType;
+        self->ecuResetTimer = UDSMillis() + args.powerDownTimeMillis;
     } else {
         return NegativeResponse(self, err);
     }
@@ -373,7 +390,11 @@ static uint8_t _0x11_ECUReset(UDSServer_t *self) {
     self->send_buf[1] = resetType;
 
     if (kEnableRapidPowerShutDown == resetType) {
-        self->send_buf[2] = args.powerDownTime;
+        uint32_t powerDownTime = args.powerDownTimeMillis / 1000;
+        if (powerDownTime > 255) {
+            powerDownTime = 255;
+        }
+        self->send_buf[2] = powerDownTime;
         self->send_size = UDS_0X11_RESP_BASE_LEN + 1;
     } else {
         self->send_size = UDS_0X11_RESP_BASE_LEN;
@@ -1159,19 +1180,17 @@ UDSErr_t UDSServerInit(UDSServer_t *self, const UDSServerConfig_t *cfg) {
     self->tp = cfg->tp;
 #elif UDS_TP == UDS_TP_ISOTP_C
     assert(cfg->phys_send_id != cfg->func_recv_id && cfg->func_recv_id != cfg->phys_recv_id);
-    UDSTpIsoTpC_t *impl = &self->tp_impl;
-    isotp_init_link(&impl->phys_link, cfg->phys_send_id, self->send_buf, self->send_buf_size,
+    UDSTpIsoTpC_t *tp = &self->_tp_impl;
+    isotp_init_link(&tp->phys_link, cfg->phys_send_id, self->send_buf, self->send_buf_size,
                     self->recv_buf, self->recv_buf_size);
-    isotp_init_link(&impl->func_link, cfg->phys_send_id, impl->func_send_buf,
-                    sizeof(impl->func_send_buf), impl->func_recv_buf, sizeof(impl->func_recv_buf));
-    self->_tp_hdl.poll = tp_poll;
-    self->_tp_hdl.send = tp_send;
-    self->_tp_hdl.recv = tp_recv;
-    self->_tp_hdl.impl = &self->tp_impl;
-    self->tp = &self->_tp_hdl;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
-    self->tp = &self->_tp_hdl;
-    self->tp->impl = &self->tp_impl;
+    isotp_init_link(&tp->func_link, cfg->phys_send_id, tp->func_send_buf,
+                    sizeof(tp->func_send_buf), tp->func_recv_buf, sizeof(tp->func_recv_buf));
+    self->tp = (UDSTpHandle_t *)tp;
+    self->tp->poll = tp_poll;
+    self->tp->send = tp_send;
+    self->tp->recv = tp_recv;
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
+    self->tp = (UDSTpHandle_t *)&self->_tp_impl;
     if (LinuxSockTpOpen(self->tp, cfg->if_name, cfg->phys_recv_id, cfg->phys_send_id,
                         cfg->func_recv_id, cfg->phys_send_id)) {
         return UDS_ERR;
@@ -1181,7 +1200,7 @@ UDSErr_t UDSServerInit(UDSServer_t *self, const UDSServerConfig_t *cfg) {
 }
 
 void UDSServerDeInit(UDSServer_t *self) {
-#if UDS_TP == UDS_TP_LINUX_SOCKET
+#if UDS_TP == UDS_TP_ISOTP_SOCKET
     LinuxSockTpClose(self->tp);
 #endif
 }
@@ -1193,8 +1212,12 @@ void UDSServerPoll(UDSServer_t *self) {
         self->fn(self, UDS_SRV_EVT_SessionTimeout, NULL);
     }
 
+    if (self->ecuResetScheduled && UDSTimeAfter(UDSMillis(), self->ecuResetTimer)) {
+        self->fn(self, UDS_SRV_EVT_DoScheduledReset, &self->ecuResetScheduled);
+    }
+
     UDSTpStatus_t tp_status = self->tp->poll(self->tp);
-    if (tp_status & TP_SEND_INPROGRESS) {
+    if (tp_status & UDS_TP_SEND_IN_PROGRESS) {
         return;
     }
 
@@ -1222,8 +1245,7 @@ void UDSServerPoll(UDSServer_t *self) {
         } else if (size == 0) {
             ;
         } else {
-            UDSErr_t err = UDS_ERR_TPORT;
-            self->fn(self, UDS_SRV_EVT_Err, &err);
+            UDS_DBG_PRINT("tp_recv failed with err %d on tp %d\n", size, ta_type);
         }
     }
 }
@@ -1261,19 +1283,17 @@ UDSErr_t UDSClientInit(UDSClient_t *client, const UDSClientConfig_t *cfg) {
     client->tp = cfg->tp;
 #elif UDS_TP == UDS_TP_ISOTP_C
     assert(cfg->phys_recv_id != cfg->func_send_id && cfg->func_send_id != cfg->phys_send_id);
-    UDSTpIsoTpC_t *impl = &client->tp_impl;
-    isotp_init_link(&impl->phys_link, cfg->phys_send_id, client->send_buf, client->send_buf_size,
+    UDSTpIsoTpC_t * tp = (UDSTpIsoTpC_t *)&client->_tp_impl;
+    isotp_init_link(&tp->phys_link, cfg->phys_send_id, client->send_buf, client->send_buf_size,
                     client->recv_buf, client->recv_buf_size);
-    isotp_init_link(&impl->func_link, cfg->func_send_id, impl->func_send_buf,
-                    sizeof(impl->func_send_buf), impl->func_recv_buf, sizeof(impl->func_recv_buf));
-    client->_tp_hdl.poll = tp_poll;
-    client->_tp_hdl.send = tp_send;
-    client->_tp_hdl.recv = tp_recv;
-    client->_tp_hdl.impl = &client->tp_impl;
-    client->tp = &client->_tp_hdl;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
-    client->tp = &client->_tp_hdl;
-    client->tp->impl = &client->tp_impl;
+    isotp_init_link(&tp->func_link, cfg->func_send_id, tp->func_send_buf,
+                    sizeof(tp->func_send_buf), tp->func_recv_buf, sizeof(tp->func_recv_buf));
+    client->tp = (UDSTpHandle_t *)tp;
+    client->tp->poll = tp_poll;
+    client->tp->send = tp_send;
+    client->tp->recv = tp_recv;
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
+    client->tp = (UDSTpHandle_t *)&client->_tp_impl;
     if (LinuxSockTpOpen(client->tp, cfg->if_name, cfg->phys_recv_id, cfg->phys_send_id,
                         cfg->phys_recv_id, cfg->func_send_id)) {
         return UDS_ERR;
@@ -1286,7 +1306,7 @@ UDSErr_t UDSClientInit(UDSClient_t *client, const UDSClientConfig_t *cfg) {
 }
 
 void UDSClientDeInit(UDSClient_t *client) {
-#if UDS_TP == UDS_TP_LINUX_SOCKET
+#if UDS_TP == UDS_TP_ISOTP_SOCKET
     LinuxSockTpClose(client->tp);
 #endif
 }
@@ -1872,7 +1892,7 @@ void UDSClientPoll(UDSClient_t *client) {
 
         if (ret < 0) {
             client->err = UDS_ERR_TPORT;
-            UDS_DBG_PRINT("tport err: %d\n", ret);
+            UDS_DBG_PRINT("tport err: %ld\n", ret);
         } else if (0 == ret) {
             UDS_DBG_PRINT("send in progress...\n");
             ; // 等待发送成功
@@ -1889,7 +1909,7 @@ void UDSClientPoll(UDSClient_t *client) {
             // Specification of Diagnostic Communication (Diagnostic on CAN - Network Layer)
             changeState(client, kRequestStateIdle);
         }
-        if (tp_status & TP_SEND_INPROGRESS) {
+        if (tp_status & UDS_TP_SEND_IN_PROGRESS) {
             ; // await send complete
         } else {
             if (client->_options_copy & SUPPRESS_POS_RESP) {

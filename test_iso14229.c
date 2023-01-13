@@ -95,10 +95,10 @@ static void printhex(const uint8_t *addr, int len) {
 }
 
 #define DEFAULT_SERVER_CONFIG()                                                                    \
-    { .tp = &g.s.tp, }
+    { .tp = &g.mock_tp.hdl, }
 
 #define DEFAULT_CLIENT_CONFIG()                                                                    \
-    { .tp = &g.c.tp, }
+    { .tp = &g.mock_tp.hdl, }
 
 #define TEST_SETUP()                                                                               \
     memset(&g, 0, sizeof(g));                                                                      \
@@ -121,6 +121,7 @@ static void printhex(const uint8_t *addr, int len) {
  * @brief minimal transport mock
  */
 struct MockTransport {
+    UDSTpHandle_t hdl;
     uint8_t recv_buf[DEFAULT_ISOTP_BUFSIZE];
     uint8_t send_buf[DEFAULT_ISOTP_BUFSIZE];
     uint16_t recv_size;
@@ -133,7 +134,7 @@ struct MockTransport {
 static ssize_t mock_transport_recv(UDSTpHandle_t *hdl, void *buf, size_t bufsize,
                                    UDSTpAddr_t *ta_type) {
     assert(hdl);
-    struct MockTransport *tp = (struct MockTransport *)hdl->impl;
+    struct MockTransport *tp = (struct MockTransport *)hdl;
     size_t size = tp->recv_size;
 
     if (bufsize < size) {
@@ -154,7 +155,7 @@ static ssize_t mock_transport_recv(UDSTpHandle_t *hdl, void *buf, size_t bufsize
 static ssize_t mock_transport_send(UDSTpHandle_t *hdl, const void *buf, size_t count,
                                    UDSTpAddr_t ta_type) {
     assert(hdl);
-    struct MockTransport *tp = (struct MockTransport *)hdl->impl;
+    struct MockTransport *tp = (struct MockTransport *)hdl;
     assert(0 == tp->send_size); // should be clear, right?
     assert(count);              // why send zero?
     memmove(tp->send_buf, buf, count);
@@ -167,7 +168,7 @@ static ssize_t mock_transport_send(UDSTpHandle_t *hdl, const void *buf, size_t c
 
 static UDSTpStatus_t mock_transport_poll(UDSTpHandle_t *hdl) {
     assert(hdl);
-    struct MockTransport *tp = (struct MockTransport *)hdl->impl;
+    struct MockTransport *tp = (struct MockTransport *)hdl;
     return tp->status;
 }
 
@@ -225,16 +226,6 @@ struct Condition {
 static struct {
     int ms; // simulated absolute time
     int t0; // marks a time point
-
-    // server
-    struct {
-        UDSTpHandle_t tp;
-    } s;
-
-    // client
-    struct {
-        UDSTpHandle_t tp;
-    } c;
 
     struct MockTransport mock_tp; // server and client tests use this independently
 
@@ -329,15 +320,9 @@ static void checkCondition(UDSServer_t *srv, struct Condition *cond) {
 // ================================================
 
 void initMockTransports() {
-    g.s.tp.recv = mock_transport_recv;
-    g.s.tp.send = mock_transport_send;
-    g.s.tp.poll = mock_transport_poll;
-    g.s.tp.impl = &g.mock_tp;
-
-    g.c.tp.recv = mock_transport_recv;
-    g.c.tp.send = mock_transport_send;
-    g.c.tp.poll = mock_transport_poll;
-    g.c.tp.impl = &g.mock_tp;
+    g.mock_tp.hdl.recv = mock_transport_recv;
+    g.mock_tp.hdl.send = mock_transport_send;
+    g.mock_tp.hdl.poll = mock_transport_poll;
 }
 
 // ================================================
@@ -391,9 +376,14 @@ void testServer0x10DiagSessCtrlFunctionalRequest() {
 
 uint8_t fn1_callCount = 0;
 uint8_t fn1(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) {
-    ASSERT_INT_EQUAL(UDS_SRV_EVT_EcuReset, ev);
-    fn1_callCount += 1;
-    return kPositiveResponse;
+    switch (ev) {
+        case UDS_SRV_EVT_EcuReset:
+            fn1_callCount += 1;
+            return kPositiveResponse;
+        default:
+            ASSERT_INT_EQUAL(UDS_SRV_EVT_DoScheduledReset, ev);
+            return kPositiveResponse;
+    }
 }
 
 // Special-case of ECU reset service

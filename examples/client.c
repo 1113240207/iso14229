@@ -1,4 +1,3 @@
-#define UDS_DBG_PRINT printf
 #include "../iso14229.h"
 #include "uds_params.h"
 #include <stdlib.h>
@@ -6,6 +5,10 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
+#if UDS_TP == UDS_TP_ISOTP_C
+#include "../isotp-c/isotp.h"
+#include "isotp-c_on_socketcan.h"
+#endif
 
 static UDSClientError_t sendHardReset(UDSClient_t *client, UDSSequence_t *seq) {
     uint8_t resetType = kHardReset;
@@ -99,20 +102,17 @@ static UDSClientCallback callbacks[] = {
     enterDiagnosticSession, 
     awaitResponse,
 
-    terminateServerProcess,
+    // terminateServerProcess,
     NULL,
 };
 // clang-format on
 
 int main(int ac, char **av) {
-    const char *ifname = "can0";
-    if (ac >= 2) {
-        ifname = av[1];
-    }
     UDSClient_t client;
-
     UDSClientConfig_t cfg = {
-        .if_name = ifname,
+#if UDS_TP == UDS_TP_ISOTP_SOCKET
+        .if_name = "vcan0",
+#endif
         .phys_recv_id = 0x7E8,
         .phys_send_id = 0x7E0,
         .func_send_id = 0x7DF,
@@ -129,6 +129,9 @@ int main(int ac, char **av) {
     int ret = 0;
     do {
         ret = UDSSequencePoll(&client, &sequence);
+        #if UDS_TP == UDS_TP_ISOTP_C
+        SocketCANRecv((UDSTpIsoTpC_t *)client.tp, cfg.phys_recv_id);
+        #endif 
         SleepMillis(1);
     } while (ret > 0);
     printf("sequence completed with status: %d\n", ret);

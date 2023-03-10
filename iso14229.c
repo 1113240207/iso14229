@@ -254,8 +254,8 @@ static int LinuxSockBind(const char *if_name, uint32_t rxid, uint32_t txid) {
     return fd;
 }
 
-static int LinuxSockTpOpen(UDSTpHandle_t *hdl, const char *if_name, uint16_t phys_rxid,
-                           uint16_t phys_txid, uint32_t func_rxid, uint32_t func_txid) {
+static int LinuxSockTpOpen(UDSTpHandle_t *hdl, const char *if_name, uint32_t phys_rxid,
+                           uint32_t phys_txid, uint32_t func_rxid, uint32_t func_txid) {
     assert(if_name);
     UDSTpLinuxIsoTp_t *impl = (UDSTpLinuxIsoTp_t *)hdl;
     hdl->recv = tp_recv;

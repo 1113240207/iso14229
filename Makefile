@@ -1,61 +1,41 @@
-SRCS= \
-isotp-c/isotp.c \
-iso14229server.c \
-iso14229client.c
+ifeq "$(TP)" "ISOTP_C"
+SRCS += isotp-c/isotp.c examples/isotp-c_on_socketcan.c
+CFLAGS += -DUDS_TP=UDS_TP_ISOTP_C
+endif
 
-HDRS= \
-iso14229.h \
-iso14229server.h \
-iso14229serverconfig.h \
-isotp-c/isotp.h \
-isotp-c/isotp_config.h \
-isotp-c/isotp_defines.h
+unit_test: CFLAGS+=-DUDS_TP=UDS_TP_CUSTOM -DUDS_CUSTOM_MILLIS
+unit_test: Makefile iso14229.h iso14229.c test_iso14229.c
+	$(CC) iso14229.c test_iso14229.c $(CFLAGS) $(LDFLAGS) -o test_iso14229
+	$(RUN) ./test_iso14229
 
-INCLUDES= \
-isotp-c
+client: CFLAGS+=-g -DUDS_DBG_PRINT=printf
+client: examples/client.c examples/uds_params.h iso14229.h iso14229.c Makefile $(SRCS)
+	$(CC) iso14229.c $(SRCS) $< $(CFLAGS) -o $@
 
+server: CFLAGS+=-g -DUDS_DBG_PRINT=printf
+server: examples/server.c examples/uds_params.h iso14229.h iso14229.c Makefile $(SRCS)
+	$(CC) iso14229.c $(SRCS) $< $(CFLAGS) -o $@
 
-# Tests (Run locally on linux)
-DEFINES=\
+test_examples: test_examples.py
+	$(RUN) ./test_examples.py
 
-TEST_CFLAGS += $(foreach i,$(INCLUDES),-I$(i))
-TEST_CFLAGS += $(foreach d,$(DEFINES),-D$(d))
+uds_prefix: CFLAGS+=-DUDS_TP=UDS_TP_CUSTOM -DUDS_CUSTOM_MILLIS
+uds_prefix: iso14229.c iso14229.h
+	$(CC) iso14229.c $(CFLAGS) -c -o /tmp/x.o && nm /tmp/x.o | grep ' T ' | grep -v 'UDS' ; test $$? = 1
 
-TEST_SRCS= \
-test_iso14229.c
+test_qemu: Makefile iso14229.h iso14229.c test_iso14229.c test_qemu.py
+	$(RUN) ./test_qemu.py
 
-TEST_CFLAGS += -g
+test: unit_test test_examples uds_prefix test_qemu
 
-test_bin: $(TEST_SRCS) $(SRCS) $(HDRS) Makefile
-	$(CC) -o $@ $(TEST_CFLAGS) $(TEST_SRCS) $(SRCS) 
-
-test: test_bin
-	./test_bin
-
-test_interactive: test_bin
-	gdb test_bin
+fuzz: CC=clang-14
+fuzz: ASAN = -fsanitize=fuzzer,signed-integer-overflow,address,undefined -fprofile-instr-generate -fcoverage-mapping
+fuzz: OPTS = -g -DUDS_TP=UDS_TP_CUSTOM -DUDS_CUSTOM_MILLIS
+fuzz: iso14229.c iso14229.h fuzz_server.c Makefile
+	$(CC) $(OPTS) $(WARN) $(INCS) $(TFLAGS) $(ASAN) fuzz_server.c iso14229.c -o fuzzer 
+	$(RUN) ./fuzzer corpus
 
 clean:
-	rm -rf test_bin
+	rm -f client server test_iso14229
 
-
-# Example
-
-EXAMPLE_SRCS=\
-example/linux_host.c \
-example/simpleserver.c
-
-EXAMPLE_HDRS=
-
-EXAMPLE_INCLUDES=\
-example
-
-EXAMPLE_CFLAGS += $(foreach i,$(INCLUDES),-I$(i))
-EXAMPLE_CFLAGS += $(foreach i,$(EXAMPLE_INCLUDES),-I$(i))
-EXAMPLE_CFLAGS += $(foreach d,$(DEFINES),-D$(d))
-EXAMPLE_CFLAGS += -g 
-
-example/linux: $(SRCS) $(EXAMPLE_SRCS) $(HDRS) $(EXAMPLE_HDRS) Makefile
-	$(CC) $(EXAMPLE_CFLAGS) -o $@ $(EXAMPLE_SRCS) $(SRCS) 
-
-.phony: py_requirements
+.phony: clean test_examples

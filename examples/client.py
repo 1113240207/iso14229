@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
-import sys
-
 from can.interfaces.socketcan import SocketcanBus
 
 import isotp
 
-import udsoncan
 from udsoncan.client import Client
 from udsoncan.connections import PythonIsoTpConnection
 from udsoncan.services import *
+
+SRV_SEND_ID = 0x7E8
+SRV_PHYS_RECV_ID = 0x7E0
+SRV_FUNC_RECV_ID = 0x7DF
 
 
 def security_algo(level, seed, params):
@@ -48,17 +49,12 @@ UDSONCAN_CLIENT_CONFIG = {
     "exception_on_negative_response": False,
 }
 
-
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(f"usage: {sys.argv[0]} [socketCAN link]")
-        exit(-1)
-
     with Client(
         conn=PythonIsoTpConnection(
             isotp_layer=isotp.CanStack(
-                bus=(SocketcanBus(channel=sys.argv[1])),
-                address=isotp.Address(rxid=0x7A8, txid=0x7A0),
+                bus=(SocketcanBus(channel="vcan0")),
+                address=isotp.Address(rxid=SRV_SEND_ID, txid=SRV_PHYS_RECV_ID),
                 params={
                     "tx_data_min_length": 8,
                     "blocksize": 0,

@@ -217,7 +217,7 @@ done:
 }
 #endif
 
-#if UDS_TP == UDS_TP_LINUX_SOCKET
+#if UDS_TP == UDS_TP_ISOTP_SOCKET
 static int LinuxSockBind(const char *if_name, uint32_t rxid, uint32_t txid) {
     int fd = 0;
     if ((fd = socket(AF_CAN, SOCK_DGRAM | SOCK_NONBLOCK, CAN_ISOTP)) < 0) {

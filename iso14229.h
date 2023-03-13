@@ -335,7 +335,7 @@ typedef struct {
     uint32_t phys_recv_id;
     uint32_t phys_send_id;
     uint32_t func_send_id;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
     const char *if_name;
     uint32_t phys_recv_id;
     uint32_t phys_send_id;
@@ -601,7 +601,7 @@ typedef struct {
     uint32_t phys_send_id;
     uint32_t phys_recv_id;
     uint32_t func_recv_id;
-#elif UDS_TP == UDS_TP_LINUX_SOCKET
+#elif UDS_TP == UDS_TP_ISOTP_SOCKET
     const char *if_name;
     uint32_t phys_send_id;
     uint32_t phys_recv_id;

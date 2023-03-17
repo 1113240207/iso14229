@@ -94,19 +94,19 @@ library
     UDS_DBG_PRINT("\n");
 
 typedef enum {
-    UDS_ERR = -1,
-    UDS_OK = 0,
-    UDS_ERR_TPORT,
-    UDS_ERR_FILE_IO,
-    UDS_ERR_RESP_TOO_SHORT, // 响应太短
-    UDS_ERR_NEG_RESP,       // 否定响应
-    UDS_ERR_DID_MISMATCH,   // 响应DID对不上期待的DID
-    UDS_ERR_SID_MISMATCH,   // 请求和响应SID对不上
-    UDS_ERR_TIMEOUT,        // 请求超时
-    UDS_ERR_BUFSIZ,         // 缓冲器不够大
-    UDS_ERR_INVALID_ARG,    // 参数不对、没发
-    UDS_ERR_BUSY,           // 在忙、没发
-    UDS_ERR_SCHEMA,
+    UDS_ERR = -1,                 // 通用错误
+    UDS_OK = 0,                   // 成功
+    UDS_ERR_TIMEOUT,              // 请求超时
+    UDS_ERR_NEG_RESP,             // 否定响应
+    UDS_ERR_DID_MISMATCH,         // 响应DID对不上期待的DID
+    UDS_ERR_SID_MISMATCH,         // 请求和响应SID对不上
+    UDS_ERR_SUBFUNCTION_MISMATCH, // 请求和响应SubFunction对不上
+    UDS_ERR_TPORT,                // 传输层错误
+    UDS_ERR_FILE_IO,              // 文件IO错误
+    UDS_ERR_RESP_TOO_SHORT,       // 响应太短
+    UDS_ERR_BUFSIZ,               // 缓冲器不够大
+    UDS_ERR_INVALID_ARG,          // 参数不对、没发
+    UDS_ERR_BUSY,                 // 正在忙、没发
 } UDSErr_t;
 
 typedef enum {

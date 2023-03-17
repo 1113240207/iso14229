@@ -406,6 +406,7 @@ MIT
 - added server fuzz test and qemu tests
 - cleaned up example tests, added isotp-c on socketcan to examples
 - added `UDS_SRV_EVT_DoScheduledReset`
+- improve client error handling
 
 ---
 

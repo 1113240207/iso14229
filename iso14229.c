@@ -1220,11 +1220,15 @@ void UDSServerPoll(UDSServer_t *self) {
     // UDS-1-2013 Figure 38: Session Timeout (S3)
     if (kDefaultSession != self->sessionType &&
         UDSTimeAfter(UDSMillis(), self->s3_session_timeout_timer)) {
-        self->fn(self, UDS_SRV_EVT_SessionTimeout, NULL);
+            if (self->fn) {
+                self->fn(self, UDS_SRV_EVT_SessionTimeout, NULL);
+            }
     }
 
     if (self->ecuResetScheduled && UDSTimeAfter(UDSMillis(), self->ecuResetTimer)) {
-        self->fn(self, UDS_SRV_EVT_DoScheduledReset, &self->ecuResetScheduled);
+        if (self->fn) {
+            self->fn(self, UDS_SRV_EVT_DoScheduledReset, &self->ecuResetScheduled);
+        }
     }
 
     UDSTpStatus_t tp_status = self->tp->poll(self->tp);
@@ -1354,6 +1358,17 @@ static UDSErr_t _ClientValidateResponse(const UDSClient_t *client) {
     } else { // 肯定响应
         if (UDS_RESPONSE_SID_OF(client->send_buf[0]) != client->recv_buf[0]) {
             return UDS_ERR_SID_MISMATCH;
+        }
+        switch (client->send_buf[0]) {
+            case kSID_ECU_RESET:
+                if (client->recv_size < 2) {
+                    return UDS_ERR_RESP_TOO_SHORT;
+                } else if (client->send_buf[1] != client->recv_buf[1]) {
+                    return UDS_ERR_SUBFUNCTION_MISMATCH;
+                } else {
+                    ;
+                }
+                break;
         }
     }
 
@@ -1507,11 +1522,8 @@ static UDSErr_t _SendRequest(UDSClient_t *client) {
 }
 
 #define PRE_REQUEST_CHECK()                                                                        \
-    if (client->err)                                                                               \
-        return client->err;                                                                        \
     if (kRequestStateIdle != client->state) {                                                      \
-        client->err = UDS_ERR_BUSY;                                                                \
-        return client->err;                                                                        \
+        return UDS_ERR_BUSY;                                                                       \
     }                                                                                              \
     clearRequestContext(client);
 
@@ -1832,7 +1844,7 @@ static UDSSeqState_t checkRequestDownloadResponse(UDSClient_t *client) {
     }
     pL_Seq->blockLength = resp.maxNumberOfBlockLength;
     if (0 == resp.maxNumberOfBlockLength) {
-        client->err = UDS_ERR_SCHEMA; // 响应格式对不上孚能规范
+        client->err = UDS_ERR;
         return UDSSeqStateDone;
     }
     return UDSSeqStateGotoNext;

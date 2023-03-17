@@ -1989,6 +1989,10 @@ bool UDSClientPoll(UDSClient_t *client) {
         return UDS_CLIENT_IDLE;
     }
 
+    if (kRequestStateIdle != client->state) {
+        return UDS_CLIENT_RUNNING;
+    }
+
     if (NULL == client->cbList) {
         return UDS_CLIENT_IDLE;
     }

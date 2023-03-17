@@ -130,7 +130,6 @@ int main(int ac, char **av) {
     printf("running sequence. . .\n");
     int running = 1;
     do {
-        // running = UDSSequencePoll(&client, &sequence);
         running = UDSClientPoll(&client);
 #if UDS_TP == UDS_TP_ISOTP_C
         SocketCANRecv((UDSTpIsoTpC_t *)client.tp, cfg.phys_recv_id);

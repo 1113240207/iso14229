@@ -11,6 +11,7 @@
 
 #ifdef __cplusplus
 extern "C" {
+#define _Static_assert static_assert
 #endif
 
 #define UDS_ARCH_CUSTOM 0
@@ -546,12 +547,12 @@ typedef struct UDSServer {
                          // server for the activated diagnostic session.
     uint16_t s3_ms;      // Session timeout
 
-    enum UDSECUResetType ecuResetScheduled; // nonzero indicates that an ECUReset has been scheduled
-    uint32_t ecuResetTimer;                 // for delaying resetting until a response
-                                            // has been sent to the client
-    uint32_t p2_timer;                      // for rate limiting server responses
-    uint32_t s3_session_timeout_timer;      // for knowing when the diagnostic
-                                            // session has timed out
+    uint8_t ecuResetScheduled;         // nonzero indicates that an ECUReset has been scheduled
+    uint32_t ecuResetTimer;            // for delaying resetting until a response
+                                       // has been sent to the client
+    uint32_t p2_timer;                 // for rate limiting server responses
+    uint32_t s3_session_timeout_timer; // for knowing when the diagnostic
+                                       // session has timed out
 
     /**
      * @brief UDS-1-2013: Table 407 - 0x36 TransferData Supported negative
@@ -612,14 +613,14 @@ typedef struct {
 } UDSServerConfig_t;
 
 typedef struct {
-    const enum UDSDiagnosticSessionType type; /*! requested session type */
-    uint16_t p2_ms;                           /*! optional: p2 timing override */
-    uint32_t p2_star_ms;                      /*! optional: p2* timing override */
+    const uint8_t type;  /*! requested diagnostic session type (enum UDSDiagnosticSessionType) */
+    uint16_t p2_ms;      /*! optional: p2 timing override */
+    uint32_t p2_star_ms; /*! optional: p2* timing override */
 } UDSDiagSessCtrlArgs_t;
 
 typedef struct {
-    const enum UDSECUResetType
-        type; /**< \~chinese 客户端请求的复位类型 \~english reset type requested by client */
+    const uint8_t type; /**< \~chinese 客户端请求的复位类型 \~english reset type requested by client
+                           (enum UDSECUResetType) */
     uint32_t powerDownTimeMillis; /**< when this much time has elapsed after a kPositiveResponse, a
                                      UDS_SRV_EVT_DoScheduledReset will be issued */
 } UDSECUResetArgs_t;
@@ -638,8 +639,8 @@ typedef struct {
 } UDSReadMemByAddrArgs_t;
 
 typedef struct {
-    enum UDSCommunicationControlType ctrlType;
-    enum UDSCommunicationType commType;
+    uint8_t ctrlType; /* enum UDSCommunicationControlType */
+    uint8_t commType; /* enum UDSCommunicationType */
 } UDSCommCtrlArgs_t;
 
 typedef struct {

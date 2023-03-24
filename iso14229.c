@@ -333,7 +333,7 @@ static uint8_t _0x10_DiagnosticSessionControl(UDSServer_t *self) {
         return NegativeResponse(self, kIncorrectMessageLengthOrInvalidFormat);
     }
 
-    enum UDSDiagnosticSessionType sessType = self->recv_buf[1] & 0x4F;
+    uint8_t sessType = self->recv_buf[1] & 0x4F;
 
     UDSDiagSessCtrlArgs_t args = {
         .type = sessType,
@@ -849,17 +849,18 @@ static uint8_t _0x35_RequestUpload(UDSServer_t *self) {
 static uint8_t _0x36_TransferData(UDSServer_t *self) {
     uint8_t err = kPositiveResponse;
     uint16_t request_data_len = self->recv_size - UDS_0X36_REQ_BASE_LEN;
+    uint8_t blockSequenceCounter = 0;
+
+    if (!self->xferIsActive) {
+        return NegativeResponse(self, kUploadDownloadNotAccepted);
+    }
 
     if (self->recv_size < UDS_0X36_REQ_BASE_LEN) {
         err = kIncorrectMessageLengthOrInvalidFormat;
         goto fail;
     }
 
-    uint8_t blockSequenceCounter = self->recv_buf[1];
-
-    if (!self->xferIsActive) {
-        return NegativeResponse(self, kUploadDownloadNotAccepted);
-    }
+    blockSequenceCounter = self->recv_buf[1];
 
     if (!self->RCRRP) {
         if (blockSequenceCounter != self->xferBlockSequenceCounter) {
@@ -875,27 +876,29 @@ static uint8_t _0x36_TransferData(UDSServer_t *self) {
         goto fail;
     }
 
-    UDSTransferDataArgs_t args = {
-        .data = &self->recv_buf[UDS_0X36_REQ_BASE_LEN],
-        .len = self->recv_size - UDS_0X36_REQ_BASE_LEN,
-        .maxRespLen = self->xferBlockLength - UDS_0X36_RESP_BASE_LEN,
-        .copyResponse = safe_copy,
-    };
+    {
+        UDSTransferDataArgs_t args = {
+            .data = &self->recv_buf[UDS_0X36_REQ_BASE_LEN],
+            .len = self->recv_size - UDS_0X36_REQ_BASE_LEN,
+            .maxRespLen = self->xferBlockLength - UDS_0X36_RESP_BASE_LEN,
+            .copyResponse = safe_copy,
+        };
 
-    self->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_TRANSFER_DATA);
-    self->send_buf[1] = blockSequenceCounter;
-    self->send_size = UDS_0X36_RESP_BASE_LEN;
+        self->send_buf[0] = UDS_RESPONSE_SID_OF(kSID_TRANSFER_DATA);
+        self->send_buf[1] = blockSequenceCounter;
+        self->send_size = UDS_0X36_RESP_BASE_LEN;
 
-    err = self->fn(self, UDS_SRV_EVT_TransferData, &args);
+        err = self->fn(self, UDS_SRV_EVT_TransferData, &args);
 
-    switch (err) {
-    case kPositiveResponse:
-        self->xferByteCounter += request_data_len;
-        return kPositiveResponse;
-    case kRequestCorrectlyReceived_ResponsePending:
-        return NegativeResponse(self, kRequestCorrectlyReceived_ResponsePending);
-    default:
-        goto fail;
+        switch (err) {
+        case kPositiveResponse:
+            self->xferByteCounter += request_data_len;
+            return kPositiveResponse;
+        case kRequestCorrectlyReceived_ResponsePending:
+            return NegativeResponse(self, kRequestCorrectlyReceived_ResponsePending);
+        default:
+            goto fail;
+        }
     }
 
 fail:
@@ -1220,9 +1223,9 @@ void UDSServerPoll(UDSServer_t *self) {
     // UDS-1-2013 Figure 38: Session Timeout (S3)
     if (kDefaultSession != self->sessionType &&
         UDSTimeAfter(UDSMillis(), self->s3_session_timeout_timer)) {
-            if (self->fn) {
-                self->fn(self, UDS_SRV_EVT_SessionTimeout, NULL);
-            }
+        if (self->fn) {
+            self->fn(self, UDS_SRV_EVT_SessionTimeout, NULL);
+        }
     }
 
     if (self->ecuResetScheduled && UDSTimeAfter(UDSMillis(), self->ecuResetTimer)) {
@@ -1289,6 +1292,10 @@ UDSErr_t UDSClientInit(UDSClient_t *client, const UDSClientConfig_t *cfg) {
     client->p2_star_ms = UDS_CLIENT_DEFAULT_P2_STAR_MS;
     client->recv_buf_size = sizeof(client->recv_buf);
     client->send_buf_size = sizeof(client->send_buf);
+
+    if (client->p2_star_ms < client->p2_ms) {
+        client->p2_star_ms = client->p2_ms;
+    }
 
 #if UDS_TP == UDS_TP_CUSTOM
     assert(cfg->tp);
@@ -1360,15 +1367,15 @@ static UDSErr_t _ClientValidateResponse(const UDSClient_t *client) {
             return UDS_ERR_SID_MISMATCH;
         }
         switch (client->send_buf[0]) {
-            case kSID_ECU_RESET:
-                if (client->recv_size < 2) {
-                    return UDS_ERR_RESP_TOO_SHORT;
-                } else if (client->send_buf[1] != client->recv_buf[1]) {
-                    return UDS_ERR_SUBFUNCTION_MISMATCH;
-                } else {
-                    ;
-                }
-                break;
+        case kSID_ECU_RESET:
+            if (client->recv_size < 2) {
+                return UDS_ERR_RESP_TOO_SHORT;
+            } else if (client->send_buf[1] != client->recv_buf[1]) {
+                return UDS_ERR_SUBFUNCTION_MISMATCH;
+            } else {
+                ;
+            }
+            break;
         }
     }
 

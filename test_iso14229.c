@@ -14,7 +14,7 @@
         if (!((_a)cond(_b))) {                                                                     \
             printf("%s:%d (%d %s %d)\n", __FILE__, __LINE__, _a, #cond, _b);                       \
             fflush(stdout);                                                                        \
-            assert(a cond b);                                                                             \
+            assert(a cond b);                                                                      \
         }                                                                                          \
     }
 
@@ -31,7 +31,7 @@
         if ((_a) != (_b)) {                                                                        \
             printf("%s:%d (%p != %p)\n", __FILE__, __LINE__, _a, _b);                              \
             fflush(stdout);                                                                        \
-            assert(a == b);                                                                             \
+            assert(a == b);                                                                        \
         }                                                                                          \
     }
 
@@ -54,29 +54,28 @@
         }                                                                                          \
     }
 
-
 #define ANSI_RESET "\033[0m"
 #define ANSI_BOLD "\033[1m"
 #define ANSI_BRIGHT_GREEN "\033[92m"
 #define ANSI_BRIGHT_MAGENTA "\033[95m"
 
-#define _TEST_SETUP_SILENT()                                                                               \
-    memset(&ctx, 0, sizeof(ctx)); \
-    ctx.func_name = __PRETTY_FUNCTION__; \
-    ctx.server_tp = (struct MockTransport ){.hdl = {.recv = mock_transport_recv, \
-                                     .send = mock_transport_send, \
-                                     .poll = mock_transport_poll}, \
-                                     .tag = "server"}; \
-    ctx.client_tp = (struct MockTransport ){.hdl = {.recv = mock_transport_recv, \
-                                     .send = mock_transport_send, \
-                                     .poll = mock_transport_poll}, \
-                                     .tag = "client"}; \
-    UDSClientInit(&ctx.client, &(UDSClientConfig_t){.tp = &ctx.client_tp.hdl}); \
-    UDSServerInit(&ctx.server, &(UDSServerConfig_t){.tp = &ctx.server_tp.hdl}); \
+#define _TEST_SETUP_SILENT()                                                                       \
+    memset(&ctx, 0, sizeof(ctx));                                                                  \
+    ctx.func_name = __PRETTY_FUNCTION__;                                                           \
+    ctx.server_tp = (struct MockTransport){.hdl = {.recv = mock_transport_recv,                    \
+                                                   .send = mock_transport_send,                    \
+                                                   .poll = mock_transport_poll},                   \
+                                           .tag = "server"};                                       \
+    ctx.client_tp = (struct MockTransport){.hdl = {.recv = mock_transport_recv,                    \
+                                                   .send = mock_transport_send,                    \
+                                                   .poll = mock_transport_poll},                   \
+                                           .tag = "client"};                                       \
+    UDSClientInit(&ctx.client, &(UDSClientConfig_t){.tp = &ctx.client_tp.hdl});                    \
+    UDSServerInit(&ctx.server, &(UDSServerConfig_t){.tp = &ctx.server_tp.hdl});
 
 #define TEST_SETUP()                                                                               \
-    _TEST_SETUP_SILENT(); \
-    printf("%s\n", ctx.func_name); \
+    _TEST_SETUP_SILENT();                                                                          \
+    printf("%s\n", ctx.func_name);
 
 struct hmm {
     const char *tag;
@@ -84,15 +83,14 @@ struct hmm {
 
 #define TEST_SETUP_PARAMETRIZED(params_list)                                                       \
     for (size_t i = 0; i < sizeof(params_list) / sizeof(params_list[0]); i++) {                    \
-        _TEST_SETUP_SILENT(); \
-        printf("%s [p:%ld] %s\n", ctx.func_name, i, ((struct hmm*)(&(params_list[i])))->tag); \
+        _TEST_SETUP_SILENT();                                                                      \
+        printf("%s [p:%ld] %s\n", ctx.func_name, i, ((struct hmm *)(&(params_list[i])))->tag);
 
 #define TEST_TEARDOWN_PARAMETRIZED()                                                               \
-    printf(ANSI_BOLD "OK [p:%ld]\n" ANSI_RESET, i);                                                           \
+    printf(ANSI_BOLD "OK [p:%ld]\n" ANSI_RESET, i);                                                \
     }
 
 #define TEST_TEARDOWN() printf(ANSI_BOLD "OK\n" ANSI_RESET);
-
 
 // TODO: parameterize and fuzz this
 #define DEFAULT_ISOTP_BUFSIZE (2048U)
@@ -106,7 +104,7 @@ struct MockTransport {
     UDSTpAddr_t recv_ta_type;
     UDSTpAddr_t send_ta_type;
     UDSTpStatus_t status;
-    const char* tag;
+    const char *tag;
 };
 
 static void printhex(const uint8_t *addr, int len) {
@@ -145,10 +143,10 @@ static ssize_t mock_transport_send(UDSTpHandle_t *hdl, const void *buf, size_t c
                                    UDSTpAddr_t ta_type) {
     assert(hdl);
     struct MockTransport *tp = (struct MockTransport *)hdl;
-    printf(ANSI_BRIGHT_GREEN "--%s_tp_send-%04d->[%02ld] ", tp->tag, UDSMillis(),count);
+    printf(ANSI_BRIGHT_GREEN "--%s_tp_send-%04d->[%02ld] ", tp->tag, UDSMillis(), count);
     printhex(buf, count);
     printf(ANSI_RESET);
-    assert(count);              // why send zero?
+    assert(count); // why send zero?
     memmove(tp->send_buf, buf, count);
     tp->send_size = count;
     return count;
@@ -160,7 +158,6 @@ static UDSTpStatus_t mock_transport_poll(UDSTpHandle_t *hdl) {
     return tp->status;
 }
 
-
 typedef struct {
     UDSServer_t server;
     struct MockTransport server_tp;
@@ -169,14 +166,12 @@ typedef struct {
     uint32_t time_ms;
     uint32_t deadline;
     uint32_t call_count;
-    const char* func_name;
+    const char *func_name;
 } Ctx_t;
 
 Ctx_t ctx;
 
-uint32_t UDSMillis() {
-    return ctx.time_ms;
-}
+uint32_t UDSMillis() { return ctx.time_ms; }
 
 static void poll_ctx(Ctx_t *ctx) {
     UDSServerPoll(&ctx->server);
@@ -184,16 +179,16 @@ static void poll_ctx(Ctx_t *ctx) {
     ctx->time_ms++;
 }
 
-#define SEND_TO_SERVER(d1, reqType)  \
-    memmove(&ctx.server_tp.recv_buf, d1, sizeof(d1)); \
-    ctx.server_tp.recv_ta_type = reqType; \
-    ctx.server_tp.recv_size = sizeof(d1); \
+#define SEND_TO_SERVER(d1, reqType)                                                                \
+    memmove(&ctx.server_tp.recv_buf, d1, sizeof(d1));                                              \
+    ctx.server_tp.recv_ta_type = reqType;                                                          \
+    ctx.server_tp.recv_size = sizeof(d1);                                                          \
     poll_ctx(&ctx);
 
-#define ASSERT_CLIENT_SENT(d1, reqType) \
-    ASSERT_INT_EQUAL(ctx.client_tp.send_size, sizeof(d1)); \
-    ASSERT_MEMORY_EQUAL(ctx.client_tp.send_buf, d1, sizeof(d1)); \
-    ASSERT_INT_EQUAL(ctx.client_tp.send_ta_type, reqType); 
+#define ASSERT_CLIENT_SENT(d1, reqType)                                                            \
+    ASSERT_INT_EQUAL(ctx.client_tp.send_size, sizeof(d1));                                         \
+    ASSERT_MEMORY_EQUAL(ctx.client_tp.send_buf, d1, sizeof(d1));                                   \
+    ASSERT_INT_EQUAL(ctx.client_tp.send_ta_type, reqType);
 
 // send data to the client
 static void send_to_client(const uint8_t *d1, size_t len, UDSTpAddr_t reqType) {
@@ -204,34 +199,32 @@ static void send_to_client(const uint8_t *d1, size_t len, UDSTpAddr_t reqType) {
     poll_ctx(&ctx);
 }
 
-#define SEND_TO_CLIENT(d1, reqType)  \
-    send_to_client(d1, sizeof(d1), reqType);
+#define SEND_TO_CLIENT(d1, reqType) send_to_client(d1, sizeof(d1), reqType);
 
 // expect a server response within a timeout
-#define EXPECT_RESPONSE_WITHIN_MILLIS(d1, reqType, timeout_ms) \
-{ \
-    uint32_t deadline = ctx.time_ms + timeout_ms; \
-    while (0 == ctx.server_tp.send_size) { \
-        poll_ctx(&ctx); \
-        ASSERT_INT_LE(ctx.time_ms, deadline); \
-    } \
-    ASSERT_INT_EQUAL(ctx.server_tp.send_size, sizeof(d1)); \
-    ASSERT_MEMORY_EQUAL(ctx.server_tp.send_buf, d1, sizeof(d1)); \
-    ASSERT_INT_EQUAL(ctx.server_tp.send_ta_type, reqType); \
-    memset(ctx.server_tp.send_buf, 0, sizeof(ctx.server_tp.send_buf)); \
-    ctx.server_tp.send_size = 0; \
-}
+#define EXPECT_RESPONSE_WITHIN_MILLIS(d1, reqType, timeout_ms)                                     \
+    {                                                                                              \
+        uint32_t deadline = ctx.time_ms + timeout_ms;                                              \
+        while (0 == ctx.server_tp.send_size) {                                                     \
+            poll_ctx(&ctx);                                                                        \
+            ASSERT_INT_LE(ctx.time_ms, deadline);                                                  \
+        }                                                                                          \
+        ASSERT_INT_EQUAL(ctx.server_tp.send_size, sizeof(d1));                                     \
+        ASSERT_MEMORY_EQUAL(ctx.server_tp.send_buf, d1, sizeof(d1));                               \
+        ASSERT_INT_EQUAL(ctx.server_tp.send_ta_type, reqType);                                     \
+        memset(ctx.server_tp.send_buf, 0, sizeof(ctx.server_tp.send_buf));                         \
+        ctx.server_tp.send_size = 0;                                                               \
+    }
 
 // expect no server response within a timeout
-#define EXPECT_NO_RESPONSE_FOR_MILLIS(timeout_ms) \
-{ \
-    uint32_t deadline = ctx.time_ms + timeout_ms; \
-    while (deadline < ctx.time_ms) { \
-        poll_ctx(&ctx); \
-    } \
-    ASSERT_INT_EQUAL(ctx.server_tp.send_size, 0); \
-}
-
+#define EXPECT_NO_RESPONSE_FOR_MILLIS(timeout_ms)                                                  \
+    {                                                                                              \
+        uint32_t deadline = ctx.time_ms + timeout_ms;                                              \
+        while (deadline < ctx.time_ms) {                                                           \
+            poll_ctx(&ctx);                                                                        \
+        }                                                                                          \
+        ASSERT_INT_EQUAL(ctx.server_tp.send_size, 0);                                              \
+    }
 
 void testServer0x10DiagSessCtrlIsDisabledByDefault() {
     TEST_SETUP();
@@ -403,8 +396,12 @@ void testServer0x27SecurityAccess() {
     TEST_TEARDOWN();
 }
 
-static uint8_t ReturnRCRRP(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) { return kRequestCorrectlyReceived_ResponsePending; }
-static uint8_t ReturnPositiveResponse(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) { return kPositiveResponse; }
+static uint8_t ReturnRCRRP(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) {
+    return kRequestCorrectlyReceived_ResponsePending;
+}
+static uint8_t ReturnPositiveResponse(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) {
+    return kPositiveResponse;
+}
 
 // ISO-14229-1 2013 Table A.1 Byte Value 0x78: requestCorrectlyReceived-ResponsePending
 // "This NRC is in general supported by each diagnostic service".
@@ -504,7 +501,7 @@ void testServer0x83DiagnosticSessionControl() {
 
 uint8_t fn9(UDSServer_t *srv, UDSServerEvent_t ev, const void *arg) {
     ASSERT_INT_EQUAL(UDS_SRV_EVT_SessionTimeout, ev);
-    ctx.call_count ++;
+    ctx.call_count++;
     return kPositiveResponse;
 }
 
@@ -522,18 +519,22 @@ void testServerSessionTimeout() {
     TEST_SETUP_PARAMETRIZED(p);
     ctx.server.fn = p[i].fn;
     ctx.server.sessionType = p[i].sessType;
-    while (ctx.time_ms < 5000) poll_ctx(&ctx);
+    while (ctx.time_ms < 5000)
+        poll_ctx(&ctx);
     ASSERT_INT_GE(ctx.call_count, p[i].expectedCallCount);
     TEST_TEARDOWN_PARAMETRIZED();
 }
 
-#define POLL_UNTIL_TIME_MS(abs_time_ms) \
-    while (ctx.time_ms < (abs_time_ms)) poll_ctx(&ctx)
+#define POLL_UNTIL_TIME_MS(abs_time_ms)                                                            \
+    while (ctx.time_ms < (abs_time_ms))                                                            \
+    poll_ctx(&ctx)
 
-#define POLL_FOR_MS(duration_ms) {  \
-    uint32_t start_time_ms = ctx.time_ms; \
-    while (ctx.time_ms < (start_time_ms + duration_ms)) poll_ctx(&ctx); \
-} \
+#define POLL_FOR_MS(duration_ms)                                                                   \
+    {                                                                                              \
+        uint32_t start_time_ms = ctx.time_ms;                                                      \
+        while (ctx.time_ms < (start_time_ms + duration_ms))                                        \
+            poll_ctx(&ctx);                                                                        \
+    }
 
 void testClientP2TimeoutExceeded() {
     TEST_SETUP();
@@ -561,7 +562,7 @@ void testClientP2TimeoutNotExceeded() {
 
     POLL_UNTIL_TIME_MS(UDS_CLIENT_DEFAULT_P2_MS + 10);
     // should return to the idle state
-    ASSERT_INT_EQUAL(kRequestStateIdle , ctx.client.state);
+    ASSERT_INT_EQUAL(kRequestStateIdle, ctx.client.state);
     // and should have no error.
     ASSERT_INT_EQUAL(UDS_OK, ctx.client.err);
     TEST_TEARDOWN();
@@ -618,7 +619,7 @@ void testClient0x11ECUReset() {
         CASE(NEG, 0, UDS_OK),
         CASE(NEG, UDS_NEG_RESP_IS_ERR, UDS_ERR_NEG_RESP),
     };
-    #undef CASE
+#undef CASE
     TEST_SETUP_PARAMETRIZED(p);
     // sending a request with these options
     ctx.client.options = p[i].options;

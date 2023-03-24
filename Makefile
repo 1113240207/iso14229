@@ -3,6 +3,10 @@ SRCS += isotp-c/isotp.c examples/isotp-c_on_socketcan.c
 CFLAGS += -DUDS_TP=UDS_TP_ISOTP_C
 endif
 
+cxx: CFLAGS+=-DUDS_TP=UDS_TP_CUSTOM 
+cxx: Makefile iso14229.c iso14229.h
+	$(CXX) iso14229.c $(CFLAGS) -c
+
 unit_test: CFLAGS+=-DUDS_TP=UDS_TP_CUSTOM -DUDS_CUSTOM_MILLIS
 unit_test: Makefile iso14229.h iso14229.c test_iso14229.c
 	$(CC) iso14229.c test_iso14229.c $(CFLAGS) $(LDFLAGS) -o test_iso14229
@@ -26,7 +30,7 @@ uds_prefix: iso14229.c iso14229.h
 test_qemu: Makefile iso14229.h iso14229.c test_iso14229.c test_qemu.py
 	$(RUN) ./test_qemu.py
 
-test: unit_test test_examples uds_prefix test_qemu
+test: cxx unit_test test_examples uds_prefix test_qemu
 
 fuzz: CC=clang-14
 fuzz: ASAN = -fsanitize=fuzzer,signed-integer-overflow,address,undefined -fprofile-instr-generate -fcoverage-mapping
@@ -36,6 +40,6 @@ fuzz: iso14229.c iso14229.h fuzz_server.c Makefile
 	$(RUN) ./fuzzer corpus
 
 clean:
-	rm -f client server test_iso14229
+	rm -f client server test_iso14229 iso14229.o
 
 .phony: clean test_examples

@@ -273,7 +273,7 @@ int isotp_send_with_id(IsoTpLink *link, uint32_t id, const uint8_t payload[], ui
 
         /* init multi-frame control flags */
         if (ISOTP_RET_OK == ret) {
-            link->send_bs_remain = 0;
+            link->send_bs_remain = ISOTP_INVALID_BS;
             link->send_st_min_us = 0;
             link->send_wtf_count = 0;
             link->send_timer_st = isotp_user_get_us();

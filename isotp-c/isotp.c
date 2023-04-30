@@ -55,8 +55,8 @@ static int isotp_send_single_frame(IsoTpLink *link, uint32_t id) {
     IsoTpCanMessage message;
     int ret;
 
-    /* multi frame message length must greater than 7  */
-    assert(link->send_size <= 7);
+    /* multi frame message length must greater than (ISO_TP_FRAME_LEN - 1)  */
+    assert(link->send_size <= (ISO_TP_FRAME_LEN - 1));
 
     /* setup message  */
     message.as.single_frame.type = ISOTP_PCI_TYPE_SINGLE;
@@ -80,8 +80,8 @@ static int isotp_send_first_frame(IsoTpLink *link, uint32_t id) {
     IsoTpCanMessage message;
     int ret;
 
-    /* multi frame message length must greater than 7  */
-    assert(link->send_size > 7);
+    /* multi frame message length must greater than (ISO_TP_FRAME_LEN - 1)  */
+    assert(link->send_size > (ISO_TP_FRAME_LEN - 1));
 
     /* setup message  */
     message.as.first_frame.type = ISOTP_PCI_TYPE_FIRST_FRAME;
@@ -106,8 +106,8 @@ static int isotp_send_consecutive_frame(IsoTpLink *link) {
     uint16_t data_length;
     int ret;
 
-    /* multi frame message length must greater than 7  */
-    assert(link->send_size > 7);
+    /* multi frame message length must greater than (ISO_TP_FRAME_LEN - 1)  */
+    assert(link->send_size > (ISO_TP_FRAME_LEN - 1));
 
     /* setup message  */
     message.as.consecutive_frame.type = TSOTP_PCI_TYPE_CONSECUTIVE_FRAME;
@@ -157,8 +157,8 @@ static int isotp_receive_single_frame(IsoTpLink *link, IsoTpCanMessage *message,
 static int isotp_receive_first_frame(IsoTpLink *link, IsoTpCanMessage *message, uint8_t len) {
     uint16_t payload_length;
 
-    if (8 != len) {
-        isotp_user_debug("First frame should be 8 bytes in length.");
+    if (ISO_TP_FRAME_LEN != len) {
+        isotp_user_debug("First frame should be ISO_TP_FRAME_LEN bytes in length.");
         return ISOTP_RET_LENGTH;
     }
 
@@ -264,7 +264,7 @@ int isotp_send_with_id(IsoTpLink *link, uint32_t id, const uint8_t payload[], ui
     link->send_offset = 0;
     (void)memcpy(link->send_buffer, payload, size);
 
-    if (link->send_size < 8) {
+    if (link->send_size < ISO_TP_FRAME_LEN) {
         /* send single frame */
         ret = isotp_send_single_frame(link, id);
     } else {
@@ -290,7 +290,7 @@ void isotp_on_can_message(IsoTpLink *link, uint8_t *data, uint8_t len) {
     IsoTpCanMessage message;
     int ret;
 
-    if (len < 2 || len > 8) {
+    if (len < 2 || len > ISO_TP_FRAME_LEN) {
         return;
     }
 

@@ -25,4 +25,6 @@
  */
 #define ISO_TP_FRAME_PADDING
 
+#define ISO_TP_FRAME_LEN 7
+
 #endif

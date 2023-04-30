@@ -1,6 +1,8 @@
 #ifndef __ISOTP_TYPES__
 #define __ISOTP_TYPES__
 
+#include "isotp_config.h"
+
 /**************************************************************
  * compiler specific defines
  *************************************************************/
@@ -65,26 +67,26 @@ typedef enum {
 typedef struct {
     uint8_t reserve_1 : 4;
     uint8_t type : 4;
-    uint8_t reserve_2[7];
+    uint8_t reserve_2[ISO_TP_FRAME_LEN-1];
 } IsoTpPciType;
 
 typedef struct {
     uint8_t SF_DL : 4;
     uint8_t type : 4;
-    uint8_t data[7];
+    uint8_t data[ISO_TP_FRAME_LEN-1];
 } IsoTpSingleFrame;
 
 typedef struct {
     uint8_t FF_DL_high : 4;
     uint8_t type : 4;
     uint8_t FF_DL_low;
-    uint8_t data[6];
+    uint8_t data[ISO_TP_FRAME_LEN-2];
 } IsoTpFirstFrame;
 
 typedef struct {
     uint8_t SN : 4;
     uint8_t type : 4;
-    uint8_t data[7];
+    uint8_t data[ISO_TP_FRAME_LEN-1];
 } IsoTpConsecutiveFrame;
 
 typedef struct {
@@ -92,7 +94,7 @@ typedef struct {
     uint8_t type : 4;
     uint8_t BS;
     uint8_t STmin;
-    uint8_t reserve[5];
+    uint8_t reserve[ISO_TP_FRAME_LEN-3];
 } IsoTpFlowControl;
 
 #else
@@ -100,7 +102,7 @@ typedef struct {
 typedef struct {
     uint8_t type : 4;
     uint8_t reserve_1 : 4;
-    uint8_t reserve_2[7];
+    uint8_t reserve_2[ISO_TP_FRAME_LEN-1];
 } IsoTpPciType;
 
 /*
@@ -116,7 +118,7 @@ typedef struct {
 typedef struct {
     uint8_t type : 4;
     uint8_t SF_DL : 4;
-    uint8_t data[7];
+    uint8_t data[ISO_TP_FRAME_LEN-1];
 } IsoTpSingleFrame;
 
 /*
@@ -133,7 +135,7 @@ typedef struct {
     uint8_t type : 4;
     uint8_t FF_DL_high : 4;
     uint8_t FF_DL_low;
-    uint8_t data[6];
+    uint8_t data[ISO_TP_FRAME_LEN-2];
 } IsoTpFirstFrame;
 
 /*
@@ -149,7 +151,7 @@ typedef struct {
 typedef struct {
     uint8_t type : 4;
     uint8_t SN : 4;
-    uint8_t data[7];
+    uint8_t data[ISO_TP_FRAME_LEN-1];
 } IsoTpConsecutiveFrame;
 
 /*
@@ -167,13 +169,13 @@ typedef struct {
     uint8_t FS : 4;
     uint8_t BS;
     uint8_t STmin;
-    uint8_t reserve[5];
+    uint8_t reserve[ISO_TP_FRAME_LEN-3];
 } IsoTpFlowControl;
 
 #endif
 
 typedef struct {
-    uint8_t ptr[8];
+    uint8_t ptr[ISO_TP_FRAME_LEN];
 } IsoTpDataArray;
 
 typedef struct {

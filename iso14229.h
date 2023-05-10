@@ -520,6 +520,7 @@ void UDSClientDeInit(UDSClient_t *client);
 void UDSClientPoll(UDSClient_t *client);
 
 UDSClientError_t UDSSendECUReset(UDSClient_t *client, UDSECUReset_t type);
+UDSClientError_t UDSSendClearDiagnosticInformation(UDSClient_t *client, uint8_t high, uint8_t middle, uint8_t low);
 UDSClientError_t UDSSendDiagSessCtrl(UDSClient_t *client, enum UDSDiagnosticSessionType mode);
 UDSClientError_t UDSSendSecurityAccess(UDSClient_t *client, uint8_t level, uint8_t *data,
                                        uint16_t size);

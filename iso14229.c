@@ -1153,6 +1153,16 @@ UDSClientError_t UDSSendECUReset(UDSClient_t *client, UDSECUReset_t type) {
     return _SendRequest(client);
 }
 
+UDSClientError_t UDSSendClearDiagnosticInformation(UDSClient_t *client, uint8_t high, uint8_t middle, uint8_t low) {
+    PRE_REQUEST_CHECK();
+    client->send_buf[0] = kSID_CLEAR_DIAGNOSTIC_INFORMATION;
+    client->send_buf[1] = high;
+    client->send_buf[2] = middle;
+    client->send_buf[3] = low;
+    client->send_size = 4;
+    return _SendRequest(client);
+}
+
 UDSClientError_t UDSSendDiagSessCtrl(UDSClient_t *client, enum UDSDiagnosticSessionType mode) {
     PRE_REQUEST_CHECK();
     client->send_buf[0] = kSID_DIAGNOSTIC_SESSION_CONTROL;

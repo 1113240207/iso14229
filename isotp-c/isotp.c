@@ -6,6 +6,7 @@
 ///                 STATIC FUNCTIONS                ///
 ///////////////////////////////////////////////////////
 
+#ifndef ISO_TP_DISABLE_FLOW_CONTROL
 /* st_min to microsecond */
 static uint8_t isotp_us_to_st_min(uint32_t us) {
     if (us <= 127000) {
@@ -15,6 +16,7 @@ static uint8_t isotp_us_to_st_min(uint32_t us) {
     }
     return 0;
 }
+#endif
 
 /* st_min to usec  */
 static uint32_t isotp_st_min_to_us(uint8_t st_min) {
@@ -26,6 +28,13 @@ static uint32_t isotp_st_min_to_us(uint8_t st_min) {
     return 0;
 }
 
+#ifdef ISO_TP_DISABLE_FLOW_CONTROL
+static int isotp_send_flow_control(IsoTpLink *link, uint8_t flow_status, uint8_t block_size,
+                                   uint32_t st_min_us) {
+    return ISOTP_RET_OK;
+}
+
+#else
 static int isotp_send_flow_control(IsoTpLink *link, uint8_t flow_status, uint8_t block_size,
                                    uint32_t st_min_us) {
 
@@ -49,6 +58,7 @@ static int isotp_send_flow_control(IsoTpLink *link, uint8_t flow_status, uint8_t
 
     return ret;
 }
+#endif
 
 static int isotp_send_single_frame(IsoTpLink *link, uint32_t id) {
 

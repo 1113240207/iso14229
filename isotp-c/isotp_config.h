@@ -27,4 +27,6 @@
 
 #define ISO_TP_FRAME_LEN 7
 
+#define ISO_TP_DISABLE_FLOW_CONTROL
+
 #endif

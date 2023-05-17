@@ -177,7 +177,7 @@ static int isotp_receive_first_frame(IsoTpLink *link, IsoTpCanMessage *message, 
     payload_length = (payload_length << 8) + message->as.first_frame.FF_DL_low;
 
     /* should not use multiple frame transmition */
-    if (payload_length <= 7) {
+    if (payload_length <= (ISO_TP_FRAME_LEN -1 )) {
         isotp_user_debug("Should not use multiple frame transmission.");
         return ISOTP_RET_LENGTH;
     }
